@@ -1,9 +1,6 @@
 use std::fmt;
 
 pub struct Config {
-    // Not yet read outside of `from_env`'s validation — will be used starting in M1
-    // (Whisper transcription) and M2 (planning agent) to authenticate OpenAI API calls.
-    #[allow(dead_code)]
     pub openai_api_key: String,
 }
 

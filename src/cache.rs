@@ -5,7 +5,6 @@ use sha2::{Digest, Sha256};
 
 use crate::whisper::Transcript;
 
-#[allow(dead_code)]
 pub fn cache_path_for(audio_path: &Path) -> Result<PathBuf, std::io::Error> {
     let audio_bytes = fs::read(audio_path)?;
     let mut hasher = Sha256::new();
@@ -21,13 +20,11 @@ pub fn cache_path_for(audio_path: &Path) -> Result<PathBuf, std::io::Error> {
     Ok(dir.join(format!("{hex_hash}.json")))
 }
 
-#[allow(dead_code)]
 pub fn load(cache_path: &Path) -> Option<Transcript> {
     let content = fs::read_to_string(cache_path).ok()?;
     serde_json::from_str(&content).ok()
 }
 
-#[allow(dead_code)]
 pub fn save(cache_path: &Path, transcript: &Transcript) -> Result<(), std::io::Error> {
     if let Some(dir) = cache_path.parent() {
         fs::create_dir_all(dir)?;

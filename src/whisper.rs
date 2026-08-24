@@ -3,14 +3,12 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Transcript {
     pub text: String,
     pub segments: Vec<Segment>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Segment {
     pub start: f64,
@@ -18,7 +16,6 @@ pub struct Segment {
     pub text: String,
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub enum WhisperError {
     Io(std::io::Error),
@@ -48,19 +45,16 @@ impl From<std::io::Error> for WhisperError {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize)]
 struct ApiErrorBody {
     error: ApiErrorDetail,
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize)]
 struct ApiErrorDetail {
     message: String,
 }
 
-#[allow(dead_code)]
 pub fn transcribe(
     base_url: &str,
     api_key: &str,
@@ -98,7 +92,6 @@ pub fn transcribe(
     serde_json::from_str::<Transcript>(&body_text).map_err(WhisperError::Json)
 }
 
-#[allow(dead_code)]
 fn build_multipart_body(boundary: &str, audio_bytes: &[u8], filename: &str) -> Vec<u8> {
     let mut body = Vec::new();
 
