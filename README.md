@@ -96,8 +96,10 @@ ai-vedit render --plan plan.json [--assets ./assets] [--out output.mp4] [--aspec
 
 ## Status
 
-Early design stage — no implementation yet. See [ROADMAP.md](ROADMAP.md) for
-planned milestones and [CONTRIBUTING.md](CONTRIBUTING.md) if you'd like to help.
+M0 (CLI skeleton) is implemented: the `plan` and `render` subcommands parse
+arguments and validate config (`OPENAI_API_KEY`), but don't yet transcribe,
+plan, or render — that's M1-M4. See [ROADMAP.md](ROADMAP.md) for planned
+milestones and [CONTRIBUTING.md](CONTRIBUTING.md) if you'd like to help.
 
 ## License
 
