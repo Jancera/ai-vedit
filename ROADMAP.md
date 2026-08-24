@@ -1,22 +1,22 @@
 # Roadmap
 
-`ai-vedit` is pre-implementation — the design in [README.md](README.md) is settled,
-but no code exists yet. This roadmap breaks that design into milestones so
+The design in [README.md](README.md) is settled, and M0 (project scaffolding)
+is now implemented. This roadmap breaks the design into milestones so
 contributors can see what's planned and pick up a piece.
 
 The canonical, up-to-date backlog lives in
 [GitHub Issues](../../issues) (look for `good first issue` and `help wanted`
 labels). This file tracks the higher-level milestones those issues fall under.
 
-## Status: 🔴 Not started
+## Status: 🟡 In progress — M0 complete
 
 ## Milestones
 
-### M0 — Project scaffolding
-- Initialize the Rust project (`cargo`, workspace/crate layout)
-- CLI argument parsing skeleton (`plan` / `render` subcommands, `--help`)
-- Config/env handling (`OPENAI_API_KEY`)
-- CI: `cargo build`, `cargo test`, `cargo clippy`, `cargo fmt --check`
+### M0 — Project scaffolding ✅ done
+- [x] Initialize the Rust project (`cargo`, workspace/crate layout)
+- [x] CLI argument parsing skeleton (`plan` / `render` subcommands, `--help`)
+- [x] Config/env handling (`OPENAI_API_KEY`)
+- [x] CI: `cargo build`, `cargo test`, `cargo clippy`, `cargo fmt --check`
 
 ### M1 — Transcription
 - OpenAI Whisper API client (`whisper-1`, `verbose_json` for timestamps)

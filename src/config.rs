@@ -1,0 +1,36 @@
+use std::fmt;
+
+pub struct Config {
+    // Not yet read outside of `from_env`'s validation — will be used starting in M1
+    // (Whisper transcription) and M2 (planning agent) to authenticate OpenAI API calls.
+    #[allow(dead_code)]
+    pub openai_api_key: String,
+}
+
+#[derive(Debug)]
+pub enum ConfigError {
+    MissingApiKey,
+}
+
+impl fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ConfigError::MissingApiKey => {
+                write!(f, "OPENAI_API_KEY environment variable is not set")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ConfigError {}
+
+impl Config {
+    pub fn from_env() -> Result<Self, ConfigError> {
+        let openai_api_key =
+            std::env::var("OPENAI_API_KEY").map_err(|_| ConfigError::MissingApiKey)?;
+        if openai_api_key.trim().is_empty() {
+            return Err(ConfigError::MissingApiKey);
+        }
+        Ok(Config { openai_api_key })
+    }
+}

@@ -1,8 +1,8 @@
 # Contributing to ai-vedit
 
-Thanks for your interest in contributing! The project is in its early design
-stage — read [README.md](README.md) for the architecture and
-[ROADMAP.md](ROADMAP.md) for what's planned and what's not.
+Thanks for your interest in contributing! The CLI skeleton (M0) is in place —
+read [README.md](README.md) for the architecture and [ROADMAP.md](ROADMAP.md)
+for what's planned and what's not.
 
 ## Where to start
 
@@ -18,9 +18,6 @@ stage — read [README.md](README.md) for the architecture and
   question is too small.
 
 ## Development setup
-
-The project isn't scaffolded yet (see milestone M0 in the roadmap). Once it
-is, the standard workflow will be:
 
 ```bash
 git clone <repo-url>
