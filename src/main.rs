@@ -1,5 +1,6 @@
 mod cli;
 mod config;
+mod whisper;
 
 use clap::Parser;
 use cli::{Cli, Commands, PlanArgs, RenderArgs};
