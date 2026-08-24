@@ -16,13 +16,12 @@ fn main() {
 
 fn run_plan(args: PlanArgs) {
     match Config::from_env() {
-        Ok(config) => {
+        Ok(_config) => {
+            // Config::from_env() only returns Ok when OPENAI_API_KEY is set and non-empty,
+            // so api_key_set is always true on this path.
             println!(
-                "plan: not yet implemented (audio={:?}, assets={:?}, aspect={:?}, api_key_set={})",
-                args.audio,
-                args.assets,
-                args.aspect,
-                !config.openai_api_key.is_empty()
+                "plan: not yet implemented (audio={:?}, assets={:?}, aspect={:?}, api_key_set=true)",
+                args.audio, args.assets, args.aspect
             );
         }
         Err(e) => {
