@@ -31,7 +31,29 @@ fn plan_rejects_invalid_aspect() {
 fn plan_defaults_to_16_9_aspect() {
     let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
     cmd.args(["plan", "--audio", "script.mp3"]);
+    cmd.env("OPENAI_API_KEY", "test-key");
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("Sixteen9"));
+}
+
+#[test]
+fn plan_without_api_key_fails_with_clear_message() {
+    let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
+    cmd.args(["plan", "--audio", "script.mp3"]);
+    cmd.env_remove("OPENAI_API_KEY");
+    cmd.assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("OPENAI_API_KEY"));
+}
+
+#[test]
+fn render_does_not_require_api_key() {
+    let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
+    cmd.args(["render", "--plan", "plan.json"]);
+    cmd.env_remove("OPENAI_API_KEY");
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("render: not yet implemented"));
 }
