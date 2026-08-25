@@ -58,8 +58,7 @@ fn run_plan(args: PlanArgs) {
                 };
 
             if let Err(e) = cache::save(&cache_path, &transcript) {
-                eprintln!("error: failed to write transcript cache: {e}");
-                std::process::exit(1);
+                eprintln!("warning: could not cache transcript at {cache_path:?}: {e}");
             }
 
             transcript

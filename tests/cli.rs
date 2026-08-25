@@ -284,7 +284,7 @@ fn plan_surfaces_planning_api_error() {
 }
 
 #[test]
-fn plan_fails_when_cache_write_fails() {
+fn plan_continues_when_cache_write_fails() {
     let dir = tempfile::tempdir().unwrap();
     let audio_path = write_fixture_audio(dir.path());
     // Block the .cache directory from being created by occupying its path with a plain file.
@@ -292,6 +292,7 @@ fn plan_fails_when_cache_write_fails() {
 
     let mut server = mockito::Server::new();
     let _mock = mock_successful_transcription(&mut server);
+    let _plan_mock = mock_successful_plan(&mut server);
 
     let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
     cmd.current_dir(dir.path());
@@ -299,9 +300,10 @@ fn plan_fails_when_cache_write_fails() {
     cmd.env("OPENAI_API_KEY", "test-key");
     cmd.env("AI_VEDIT_OPENAI_BASE_URL", server.url());
     cmd.assert()
-        .failure()
-        .code(1)
-        .stderr(predicate::str::contains("failed to write transcript cache"));
+        .success()
+        .stderr(predicate::str::contains("warning"));
+
+    assert!(dir.path().join("plan.json").exists());
 }
 
 #[test]
