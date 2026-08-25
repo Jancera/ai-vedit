@@ -160,7 +160,14 @@ fn run_render(args: RenderArgs) {
         }
     };
 
-    let tmp_dir = std::path::Path::new(".render-tmp");
+    let tmp_dir = match std::env::current_dir() {
+        Ok(cwd) => cwd.join(".render-tmp"),
+        Err(e) => {
+            eprintln!("error: cannot determine current directory: {e}");
+            std::process::exit(1);
+        }
+    };
+    let tmp_dir = tmp_dir.as_path();
     if let Err(e) = std::fs::create_dir_all(tmp_dir) {
         eprintln!("error: cannot create temp directory {tmp_dir:?}: {e}");
         std::process::exit(1);
