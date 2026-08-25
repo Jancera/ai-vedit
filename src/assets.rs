@@ -239,4 +239,20 @@ mod selector_tests {
             other => panic!("expected EmptyLibrary error, got {other:?}"),
         }
     }
+
+    #[test]
+    fn select_errors_when_general_exists_but_is_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("city-broll")).unwrap();
+        std::fs::create_dir(dir.path().join("general")).unwrap();
+
+        let mut selector = AssetSelector::new(dir.path()).unwrap();
+
+        match selector.select("city-broll") {
+            Err(SelectorError::EmptyLibrary { category }) => {
+                assert_eq!(category, "city-broll");
+            }
+            other => panic!("expected EmptyLibrary error, got {other:?}"),
+        }
+    }
 }
