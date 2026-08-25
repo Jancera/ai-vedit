@@ -41,8 +41,13 @@ fn run_plan(args: PlanArgs) {
     let transcript = match cache::load(&cache_path) {
         Some(cached) => cached,
         None => {
-            let base_url = std::env::var("AI_VEDIT_OPENAI_BASE_URL")
-                .unwrap_or_else(|_| "https://api.openai.com".to_string());
+            let base_url = match std::env::var("AI_VEDIT_OPENAI_BASE_URL") {
+                Ok(url) => {
+                    eprintln!("note: using Whisper base URL {url} from AI_VEDIT_OPENAI_BASE_URL");
+                    url
+                }
+                Err(_) => "https://api.openai.com".to_string(),
+            };
 
             let transcript =
                 match whisper::transcribe(&base_url, &config.openai_api_key, &args.audio) {
@@ -54,8 +59,7 @@ fn run_plan(args: PlanArgs) {
                 };
 
             if let Err(e) = cache::save(&cache_path, &transcript) {
-                eprintln!("error: failed to write transcript cache: {e}");
-                std::process::exit(1);
+                eprintln!("warning: could not cache transcript at {cache_path:?}: {e}");
             }
 
             transcript

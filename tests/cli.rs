@@ -174,6 +174,26 @@ fn plan_reuses_cached_transcript_on_second_run() {
 }
 
 #[test]
+fn plan_continues_when_cache_write_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let audio_path = write_fixture_audio(dir.path());
+    // Block the .cache directory from being created by occupying its path with a plain file.
+    std::fs::write(dir.path().join(".cache"), b"not a directory").unwrap();
+
+    let mut server = mockito::Server::new();
+    let _mock = mock_successful_transcription(&mut server);
+
+    let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
+    cmd.args(["plan", "--audio", audio_path.to_str().unwrap()]);
+    cmd.env("OPENAI_API_KEY", "test-key");
+    cmd.env("AI_VEDIT_OPENAI_BASE_URL", server.url());
+    cmd.assert()
+        .success()
+        .stderr(predicate::str::contains("warning"))
+        .stdout(predicate::str::contains("1 segment"));
+}
+
+#[test]
 fn plan_surfaces_transcription_api_error() {
     let dir = tempfile::tempdir().unwrap();
     let audio_path = write_fixture_audio(dir.path());

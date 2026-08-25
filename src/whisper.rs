@@ -65,13 +65,19 @@ pub fn transcribe(
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("audio.mp3");
+    let filename = sanitize_filename(filename);
 
     let boundary = "----ai-vedit-boundary-7f3a9c";
-    let body = build_multipart_body(boundary, &audio_bytes, filename);
+    let body = build_multipart_body(boundary, &audio_bytes, &filename);
     let content_type = format!("multipart/form-data; boundary={boundary}");
     let url = format!("{base_url}/v1/audio/transcriptions");
 
-    let result = ureq::post(&url)
+    let agent = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(300))
+        .build();
+
+    let result = agent
+        .post(&url)
         .set("Authorization", &format!("Bearer {api_key}"))
         .set("Content-Type", &content_type)
         .send_bytes(&body);
@@ -90,6 +96,16 @@ pub fn transcribe(
 
     let body_text = response.into_string()?;
     serde_json::from_str::<Transcript>(&body_text).map_err(WhisperError::Json)
+}
+
+fn sanitize_filename(filename: &str) -> String {
+    filename
+        .chars()
+        .map(|c| match c {
+            '"' | '\r' | '\n' => '_',
+            other => other,
+        })
+        .collect()
 }
 
 fn build_multipart_body(boundary: &str, audio_bytes: &[u8], filename: &str) -> Vec<u8> {
@@ -171,6 +187,36 @@ mod tests {
             }
             other => panic!("expected Api error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn transcribe_sends_correct_multipart_fields() {
+        let mut server = mockito::Server::new();
+        let _mock = server
+            .mock("POST", "/v1/audio/transcriptions")
+            .match_body(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::Regex(r#"name="model""#.to_string()),
+                mockito::Matcher::Regex("whisper-1".to_string()),
+                mockito::Matcher::Regex(r#"name="response_format""#.to_string()),
+                mockito::Matcher::Regex("verbose_json".to_string()),
+                mockito::Matcher::Regex(r#"name="file""#.to_string()),
+            ]))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"text":"hi","segments":[]}"#)
+            .create();
+
+        let audio_path = std::env::temp_dir().join("ai-vedit-test-audio-multipart.mp3");
+        std::fs::write(&audio_path, b"fake audio bytes").unwrap();
+
+        let result = transcribe(&server.url(), "test-key", &audio_path);
+
+        std::fs::remove_file(&audio_path).ok();
+
+        assert!(
+            result.is_ok(),
+            "expected successful transcription, got {result:?}"
+        );
     }
 
     #[test]
