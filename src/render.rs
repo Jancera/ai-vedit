@@ -21,20 +21,25 @@ pub fn ken_burns_command(
 ) -> Vec<String> {
     let (width, height) = resolution;
     let frames = (duration * FPS as f64).round() as u64;
-    let zoompan = format!("zoompan=z='min(zoom+0.0015,1.15)':d={frames}:s={width}x{height}");
+    let zoompan = format!(
+        "zoompan=z='min(zoom+0.0015,1.15)':d={frames}:s={width}x{height}:fps={FPS}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+    );
 
     vec![
+        "-hide_banner".to_string(),
         "-y".to_string(),
         "-loop".to_string(),
         "1".to_string(),
         "-i".to_string(),
         image_path.to_string_lossy().to_string(),
         "-t".to_string(),
-        format!("{duration:.1}"),
+        format!("{duration:.3}"),
         "-vf".to_string(),
         zoompan,
         "-r".to_string(),
         FPS.to_string(),
+        "-pix_fmt".to_string(),
+        "yuv420p".to_string(),
         output_path.to_string_lossy().to_string(),
     ]
 }
@@ -51,18 +56,21 @@ pub fn video_clip_command(
     );
 
     vec![
+        "-hide_banner".to_string(),
         "-y".to_string(),
         "-stream_loop".to_string(),
         "-1".to_string(),
         "-i".to_string(),
         video_path.to_string_lossy().to_string(),
         "-t".to_string(),
-        format!("{duration:.1}"),
+        format!("{duration:.3}"),
         "-vf".to_string(),
         scale_pad,
         "-an".to_string(),
         "-r".to_string(),
         FPS.to_string(),
+        "-pix_fmt".to_string(),
+        "yuv420p".to_string(),
         output_path.to_string_lossy().to_string(),
     ]
 }
@@ -76,6 +84,7 @@ pub fn concat_list_content(clip_paths: &[PathBuf]) -> String {
 
 pub fn concat_command(list_path: &Path, output_path: &Path) -> Vec<String> {
     vec![
+        "-hide_banner".to_string(),
         "-y".to_string(),
         "-f".to_string(),
         "concat".to_string(),
@@ -91,6 +100,7 @@ pub fn concat_command(list_path: &Path, output_path: &Path) -> Vec<String> {
 
 pub fn mux_audio_command(video_path: &Path, audio_path: &Path, output_path: &Path) -> Vec<String> {
     vec![
+        "-hide_banner".to_string(),
         "-y".to_string(),
         "-i".to_string(),
         video_path.to_string_lossy().to_string(),
@@ -124,7 +134,7 @@ impl fmt::Display for RenderError {
             RenderError::Ffmpeg { command, stderr } => {
                 write!(
                     f,
-                    "ffmpeg failed running `ffmpeg {}`: {stderr}",
+                    "ffmpeg command failed (`{}`): {stderr}",
                     command.join(" ")
                 )
             }
@@ -176,17 +186,21 @@ mod tests {
         assert_eq!(
             args,
             vec![
+                "-hide_banner".to_string(),
                 "-y".to_string(),
                 "-loop".to_string(),
                 "1".to_string(),
                 "-i".to_string(),
                 "photo.jpg".to_string(),
                 "-t".to_string(),
-                "2.0".to_string(),
+                "2.000".to_string(),
                 "-vf".to_string(),
-                "zoompan=z='min(zoom+0.0015,1.15)':d=120:s=1920x1080".to_string(),
+                "zoompan=z='min(zoom+0.0015,1.15)':d=120:s=1920x1080:fps=60:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+                    .to_string(),
                 "-r".to_string(),
                 "60".to_string(),
+                "-pix_fmt".to_string(),
+                "yuv420p".to_string(),
                 "out.mp4".to_string(),
             ]
         );
@@ -204,19 +218,22 @@ mod tests {
         assert_eq!(
             args,
             vec![
+                "-hide_banner".to_string(),
                 "-y".to_string(),
                 "-stream_loop".to_string(),
                 "-1".to_string(),
                 "-i".to_string(),
                 "clip.mp4".to_string(),
                 "-t".to_string(),
-                "3.5".to_string(),
+                "3.500".to_string(),
                 "-vf".to_string(),
                 "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2"
                     .to_string(),
                 "-an".to_string(),
                 "-r".to_string(),
                 "60".to_string(),
+                "-pix_fmt".to_string(),
+                "yuv420p".to_string(),
                 "out.mp4".to_string(),
             ]
         );
@@ -238,6 +255,7 @@ mod tests {
         assert_eq!(
             args,
             vec![
+                "-hide_banner".to_string(),
                 "-y".to_string(),
                 "-f".to_string(),
                 "concat".to_string(),
@@ -263,6 +281,7 @@ mod tests {
         assert_eq!(
             args,
             vec![
+                "-hide_banner".to_string(),
                 "-y".to_string(),
                 "-i".to_string(),
                 "video.mp4".to_string(),

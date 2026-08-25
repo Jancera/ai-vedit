@@ -5,20 +5,17 @@ use std::path::{Path, PathBuf};
 use crate::library::discover_categories;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
 pub enum AssetKind {
     Image,
     Video,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
 pub struct Asset {
     pub path: PathBuf,
     pub kind: AssetKind,
 }
 
-#[allow(dead_code)]
 pub fn discover_assets(category_dir: &Path) -> Result<Vec<Asset>, std::io::Error> {
     let entries = match std::fs::read_dir(category_dir) {
         Ok(entries) => entries,
@@ -57,14 +54,12 @@ pub struct Selection {
     pub used_fallback: bool,
 }
 
-#[allow(dead_code)]
 pub struct AssetSelector {
     categories: HashMap<String, Vec<Asset>>,
     cursors: HashMap<String, usize>,
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub enum SelectorError {
     Io(std::io::Error),
     EmptyLibrary { category: String },
@@ -92,7 +87,6 @@ impl From<std::io::Error> for SelectorError {
     }
 }
 
-#[allow(dead_code)]
 impl AssetSelector {
     pub fn new(assets_dir: &Path) -> Result<Self, std::io::Error> {
         let category_names = discover_categories(assets_dir)?;

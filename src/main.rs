@@ -173,13 +173,27 @@ fn run_render(args: RenderArgs) {
         std::process::exit(1);
     }
 
-    let resolution = render::resolution_for(args.aspect);
+    if args.aspect != plan_file.aspect {
+        eprintln!(
+            "warning: --aspect {:?} differs from the plan's aspect {:?}; using the plan's aspect",
+            args.aspect, plan_file.aspect
+        );
+    }
+    let resolution = render::resolution_for(plan_file.aspect);
     let total = plan_file.beats.len();
+    if plan_file.beats.is_empty() {
+        eprintln!("error: plan has no beats to render");
+        std::process::exit(1);
+    }
     let mut clip_paths = Vec::new();
 
     for (i, beat) in plan_file.beats.iter().enumerate() {
         let beat_num = i + 1;
         let duration = beat.end - beat.start;
+        if duration <= 0.0 {
+            eprintln!("error: beat {beat_num} has a non-positive duration ({duration:.3}s)");
+            std::process::exit(1);
+        }
         println!(
             "rendering beat {beat_num}/{total} ({}, {duration:.1}s)...",
             beat.category
@@ -200,7 +214,8 @@ fn run_render(args: RenderArgs) {
             );
         }
 
-        let clip_path = tmp_dir.join(format!("beat-{beat_num:03}.mp4"));
+        let clip_filename = format!("beat-{beat_num:03}.mp4");
+        let clip_path = tmp_dir.join(&clip_filename);
 
         let ffmpeg_args = match selection.asset.kind {
             assets::AssetKind::Image => {
@@ -216,7 +231,7 @@ fn run_render(args: RenderArgs) {
             std::process::exit(1);
         }
 
-        clip_paths.push(clip_path);
+        clip_paths.push(std::path::PathBuf::from(&clip_filename));
     }
 
     println!("concatenating {total} clips...");
