@@ -1,8 +1,8 @@
 # Roadmap
 
 The design in [README.md](README.md) is settled, and M0 (project scaffolding)
-is now implemented. This roadmap breaks the design into milestones so
-contributors can see what's planned and pick up a piece.
+and M1 (transcription) are now implemented. This roadmap breaks the design
+into milestones so contributors can see what's planned and pick up a piece.
 
 The canonical, up-to-date backlog lives in
 [GitHub Issues](../../issues) (look for `good first issue` and `help wanted`
