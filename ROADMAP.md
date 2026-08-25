@@ -1,15 +1,15 @@
 # Roadmap
 
 The design in [README.md](README.md) is settled, and M0 (project scaffolding),
-M1 (transcription), M2 (planning agent), and M3 (asset library) are now
-implemented. This roadmap breaks the design into milestones so contributors
-can see what's planned and pick up a piece.
+M1 (transcription), M2 (planning agent), M3 (asset library), and M4 (render
+pipeline) are now implemented. This roadmap breaks the design into
+milestones so contributors can see what's planned and pick up a piece.
 
 The canonical, up-to-date backlog lives in
 [GitHub Issues](../../issues) (look for `good first issue` and `help wanted`
 labels). This file tracks the higher-level milestones those issues fall under.
 
-## Status: 🟡 In progress — M0, M1, M2, M3 complete
+## Status: 🟡 In progress — M0, M1, M2, M3, M4 complete
 
 ## Milestones
 
@@ -36,12 +36,12 @@ labels). This file tracks the higher-level milestones those issues fall under.
 - [x] Round-robin asset selection within a category (prefer unused files)
 - [x] `general/` fallback category handling
 
-### M4 — Render pipeline
-- ffmpeg invocation layer (shell-out + command construction)
-- Image handling: Ken Burns (zoom/pan) hold for beat duration
-- Video handling: trim to fit / loop if shorter than beat duration
-- Concatenation of beat clips + narration audio overlay
-- Aspect ratio config (`--aspect 16:9|9:16`, default 16:9 1920x1080)
+### M4 — Render pipeline ✅ done
+- [x] ffmpeg invocation layer (shell-out + command construction)
+- [x] Image handling: Ken Burns (zoom/pan) hold for beat duration
+- [x] Video handling: trim to fit / loop if shorter than beat duration
+- [x] Concatenation of beat clips + narration audio overlay
+- [x] Aspect ratio config (`--aspect 16:9|9:16`, default 16:9 1920x1080)
 
 ### M5 — Polish
 - Clear error messages (missing/empty categories, ffmpeg failures with the

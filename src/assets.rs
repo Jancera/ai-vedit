@@ -5,20 +5,17 @@ use std::path::{Path, PathBuf};
 use crate::library::discover_categories;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
 pub enum AssetKind {
     Image,
     Video,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
 pub struct Asset {
     pub path: PathBuf,
     pub kind: AssetKind,
 }
 
-#[allow(dead_code)]
 pub fn discover_assets(category_dir: &Path) -> Result<Vec<Asset>, std::io::Error> {
     let entries = match std::fs::read_dir(category_dir) {
         Ok(entries) => entries,
@@ -51,14 +48,18 @@ fn classify_extension(path: &Path) -> Option<AssetKind> {
     }
 }
 
-#[allow(dead_code)]
+#[derive(Debug)]
+pub struct Selection {
+    pub asset: Asset,
+    pub used_fallback: bool,
+}
+
 pub struct AssetSelector {
     categories: HashMap<String, Vec<Asset>>,
     cursors: HashMap<String, usize>,
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub enum SelectorError {
     Io(std::io::Error),
     EmptyLibrary { category: String },
@@ -86,7 +87,6 @@ impl From<std::io::Error> for SelectorError {
     }
 }
 
-#[allow(dead_code)]
 impl AssetSelector {
     pub fn new(assets_dir: &Path) -> Result<Self, std::io::Error> {
         let category_names = discover_categories(assets_dir)?;
@@ -103,7 +103,7 @@ impl AssetSelector {
         })
     }
 
-    pub fn select(&mut self, category: &str) -> Result<Asset, SelectorError> {
+    pub fn select(&mut self, category: &str) -> Result<Selection, SelectorError> {
         let effective_category = match self.categories.get(category) {
             Some(assets) if !assets.is_empty() => category,
             _ => match self.categories.get("general") {
@@ -116,6 +116,8 @@ impl AssetSelector {
             },
         };
 
+        let used_fallback = effective_category != category;
+
         let assets = &self.categories[effective_category];
         let cursor = self
             .cursors
@@ -124,7 +126,10 @@ impl AssetSelector {
         let asset = assets[*cursor % assets.len()].clone();
         *cursor += 1;
 
-        Ok(asset)
+        Ok(Selection {
+            asset,
+            used_fallback,
+        })
     }
 }
 
@@ -193,9 +198,21 @@ mod selector_tests {
         let second = selector.select("city-broll").unwrap();
         let third = selector.select("city-broll").unwrap();
 
-        assert_eq!(first.path, dir.path().join("city-broll").join("a.jpg"));
-        assert_eq!(second.path, dir.path().join("city-broll").join("b.jpg"));
-        assert_eq!(third.path, dir.path().join("city-broll").join("a.jpg"));
+        assert_eq!(
+            first.asset.path,
+            dir.path().join("city-broll").join("a.jpg")
+        );
+        assert!(!first.used_fallback);
+        assert_eq!(
+            second.asset.path,
+            dir.path().join("city-broll").join("b.jpg")
+        );
+        assert!(!second.used_fallback);
+        assert_eq!(
+            third.asset.path,
+            dir.path().join("city-broll").join("a.jpg")
+        );
+        assert!(!third.used_fallback);
     }
 
     #[test]
@@ -207,9 +224,13 @@ mod selector_tests {
 
         let mut selector = AssetSelector::new(dir.path()).unwrap();
 
-        let asset = selector.select("city-broll").unwrap();
+        let selection = selector.select("city-broll").unwrap();
 
-        assert_eq!(asset.path, dir.path().join("general").join("filler.mp4"));
+        assert_eq!(
+            selection.asset.path,
+            dir.path().join("general").join("filler.mp4")
+        );
+        assert!(selection.used_fallback);
     }
 
     #[test]
@@ -220,9 +241,13 @@ mod selector_tests {
 
         let mut selector = AssetSelector::new(dir.path()).unwrap();
 
-        let asset = selector.select("does-not-exist").unwrap();
+        let selection = selector.select("does-not-exist").unwrap();
 
-        assert_eq!(asset.path, dir.path().join("general").join("filler.mp4"));
+        assert_eq!(
+            selection.asset.path,
+            dir.path().join("general").join("filler.mp4")
+        );
+        assert!(selection.used_fallback);
     }
 
     #[test]
