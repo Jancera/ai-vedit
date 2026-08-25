@@ -6,7 +6,6 @@ use crate::whisper::Transcript;
 
 const MODEL: &str = "gpt-4o-mini";
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Beat {
     pub start: f64,
@@ -16,13 +15,11 @@ pub struct Beat {
     pub is_new_category: bool,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Plan {
     pub beats: Vec<Beat>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub enum PlannerError {
     Http(String),
@@ -73,7 +70,6 @@ struct ChatMessage {
     content: String,
 }
 
-#[allow(dead_code)]
 pub fn plan_beats(
     base_url: &str,
     api_key: &str,

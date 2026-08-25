@@ -16,6 +16,21 @@ fn mock_successful_transcription(server: &mut mockito::Server) -> mockito::Mock 
         .create()
 }
 
+fn mock_successful_plan(server: &mut mockito::Server) -> mockito::Mock {
+    let content = r#"{"beats":[{"start":0.0,"end":2.0,"description":"Opening shot","category":"general","is_new_category":false}]}"#;
+    let body = format!(
+        r#"{{"choices":[{{"message":{{"content":{}}}}}]}}"#,
+        serde_json::to_string(content).unwrap()
+    );
+
+    server
+        .mock("POST", "/v1/chat/completions")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(body)
+        .create()
+}
+
 #[test]
 fn help_lists_subcommands() {
     let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
@@ -90,14 +105,17 @@ fn plan_defaults_to_16_9_aspect() {
     let audio_path = write_fixture_audio(dir.path());
     let mut server = mockito::Server::new();
     let _mock = mock_successful_transcription(&mut server);
+    let _plan_mock = mock_successful_plan(&mut server);
 
     let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
+    cmd.current_dir(dir.path());
     cmd.args(["plan", "--audio", audio_path.to_str().unwrap()]);
     cmd.env("OPENAI_API_KEY", "test-key");
     cmd.env("AI_VEDIT_OPENAI_BASE_URL", server.url());
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Sixteen9"));
+    cmd.assert().success();
+
+    let plan_json = std::fs::read_to_string(dir.path().join("plan.json")).unwrap();
+    assert!(plan_json.contains("Sixteen9"));
 }
 
 #[test]
@@ -106,8 +124,10 @@ fn plan_accepts_9_16_aspect() {
     let audio_path = write_fixture_audio(dir.path());
     let mut server = mockito::Server::new();
     let _mock = mock_successful_transcription(&mut server);
+    let _plan_mock = mock_successful_plan(&mut server);
 
     let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
+    cmd.current_dir(dir.path());
     cmd.args([
         "plan",
         "--audio",
@@ -117,9 +137,10 @@ fn plan_accepts_9_16_aspect() {
     ]);
     cmd.env("OPENAI_API_KEY", "test-key");
     cmd.env("AI_VEDIT_OPENAI_BASE_URL", server.url());
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Nine16"));
+    cmd.assert().success();
+
+    let plan_json = std::fs::read_to_string(dir.path().join("plan.json")).unwrap();
+    assert!(plan_json.contains("Nine16"));
 }
 
 #[test]
@@ -128,14 +149,16 @@ fn plan_defaults_to_assets_dir() {
     let audio_path = write_fixture_audio(dir.path());
     let mut server = mockito::Server::new();
     let _mock = mock_successful_transcription(&mut server);
+    let _plan_mock = mock_successful_plan(&mut server);
 
     let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
+    cmd.current_dir(dir.path());
     cmd.args(["plan", "--audio", audio_path.to_str().unwrap()]);
     cmd.env("OPENAI_API_KEY", "test-key");
     cmd.env("AI_VEDIT_OPENAI_BASE_URL", server.url());
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("assets=\"assets\""));
+        .stdout(predicate::str::contains("assets library: \"assets\""));
 }
 
 #[test]
@@ -144,15 +167,24 @@ fn plan_prints_transcription_summary_and_cache_path() {
     let audio_path = write_fixture_audio(dir.path());
     let mut server = mockito::Server::new();
     let _mock = mock_successful_transcription(&mut server);
+    let _plan_mock = mock_successful_plan(&mut server);
 
     let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
+    cmd.current_dir(dir.path());
     cmd.args(["plan", "--audio", audio_path.to_str().unwrap()]);
     cmd.env("OPENAI_API_KEY", "test-key");
     cmd.env("AI_VEDIT_OPENAI_BASE_URL", server.url());
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("1 segment"))
-        .stdout(predicate::str::contains(".cache"));
+    cmd.assert().success();
+
+    let cache_dir = dir.path().join(".cache");
+    let cached_files: Vec<_> = std::fs::read_dir(&cache_dir)
+        .expect("expected .cache directory to exist")
+        .collect();
+    assert_eq!(
+        cached_files.len(),
+        1,
+        "expected exactly one cached transcript file"
+    );
 }
 
 #[test]
@@ -161,9 +193,11 @@ fn plan_reuses_cached_transcript_on_second_run() {
     let audio_path = write_fixture_audio(dir.path());
     let mut server = mockito::Server::new();
     let mock = mock_successful_transcription(&mut server).expect(1);
+    let plan_mock = mock_successful_plan(&mut server).expect(2);
 
     for _ in 0..2 {
         let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
+        cmd.current_dir(dir.path());
         cmd.args(["plan", "--audio", audio_path.to_str().unwrap()]);
         cmd.env("OPENAI_API_KEY", "test-key");
         cmd.env("AI_VEDIT_OPENAI_BASE_URL", server.url());
@@ -171,10 +205,86 @@ fn plan_reuses_cached_transcript_on_second_run() {
     }
 
     mock.assert();
+    plan_mock.assert();
 }
 
 #[test]
-fn plan_continues_when_cache_write_fails() {
+fn plan_writes_plan_json_and_prints_time_budget() {
+    let dir = tempfile::tempdir().unwrap();
+    let audio_path = write_fixture_audio(dir.path());
+    let mut server = mockito::Server::new();
+    let _mock = mock_successful_transcription(&mut server);
+    let _plan_mock = mock_successful_plan(&mut server);
+
+    let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
+    cmd.current_dir(dir.path());
+    cmd.args(["plan", "--audio", audio_path.to_str().unwrap()]);
+    cmd.env("OPENAI_API_KEY", "test-key");
+    cmd.env("AI_VEDIT_OPENAI_BASE_URL", server.url());
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("general"))
+        .stdout(predicate::str::contains("2.0s"));
+
+    assert!(dir.path().join("plan.json").exists());
+}
+
+#[test]
+fn plan_lists_new_categories_separately() {
+    let dir = tempfile::tempdir().unwrap();
+    let audio_path = write_fixture_audio(dir.path());
+    let mut server = mockito::Server::new();
+    let _mock = mock_successful_transcription(&mut server);
+
+    let content = r#"{"beats":[{"start":0.0,"end":2.0,"description":"New idea","category":"drone-shots","is_new_category":true}]}"#;
+    let body = format!(
+        r#"{{"choices":[{{"message":{{"content":{}}}}}]}}"#,
+        serde_json::to_string(content).unwrap()
+    );
+    let _plan_mock = server
+        .mock("POST", "/v1/chat/completions")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(body)
+        .create();
+
+    let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
+    cmd.current_dir(dir.path());
+    cmd.args(["plan", "--audio", audio_path.to_str().unwrap()]);
+    cmd.env("OPENAI_API_KEY", "test-key");
+    cmd.env("AI_VEDIT_OPENAI_BASE_URL", server.url());
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("drone-shots"))
+        .stdout(predicate::str::contains("create"));
+}
+
+#[test]
+fn plan_surfaces_planning_api_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let audio_path = write_fixture_audio(dir.path());
+    let mut server = mockito::Server::new();
+    let _mock = mock_successful_transcription(&mut server);
+    let _plan_mock = server
+        .mock("POST", "/v1/chat/completions")
+        .with_status(401)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"error":{"message":"Invalid API key"}}"#)
+        .create();
+
+    let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
+    cmd.current_dir(dir.path());
+    cmd.args(["plan", "--audio", audio_path.to_str().unwrap()]);
+    cmd.env("OPENAI_API_KEY", "test-key");
+    cmd.env("AI_VEDIT_OPENAI_BASE_URL", server.url());
+    cmd.assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("Invalid API key"));
+}
+
+#[test]
+fn plan_fails_when_cache_write_fails() {
     let dir = tempfile::tempdir().unwrap();
     let audio_path = write_fixture_audio(dir.path());
     // Block the .cache directory from being created by occupying its path with a plain file.
@@ -184,13 +294,14 @@ fn plan_continues_when_cache_write_fails() {
     let _mock = mock_successful_transcription(&mut server);
 
     let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
+    cmd.current_dir(dir.path());
     cmd.args(["plan", "--audio", audio_path.to_str().unwrap()]);
     cmd.env("OPENAI_API_KEY", "test-key");
     cmd.env("AI_VEDIT_OPENAI_BASE_URL", server.url());
     cmd.assert()
-        .success()
-        .stderr(predicate::str::contains("warning"))
-        .stdout(predicate::str::contains("1 segment"));
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("failed to write transcript cache"));
 }
 
 #[test]

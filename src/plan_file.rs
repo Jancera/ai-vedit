@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use crate::cli::AspectRatio;
 use crate::planner::Beat;
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PlanFile {
     pub audio_path: PathBuf,
@@ -38,7 +37,6 @@ impl From<std::io::Error> for PlanFileError {
     }
 }
 
-#[allow(dead_code)]
 pub fn save(path: &Path, plan_file: &PlanFile) -> Result<(), std::io::Error> {
     let content = serde_json::to_string_pretty(plan_file).map_err(std::io::Error::other)?;
     std::fs::write(path, content)

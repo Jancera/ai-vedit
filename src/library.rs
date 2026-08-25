@@ -1,6 +1,5 @@
 use std::path::Path;
 
-#[allow(dead_code)]
 pub fn discover_categories(assets_dir: &Path) -> Result<Vec<String>, std::io::Error> {
     let entries = match std::fs::read_dir(assets_dir) {
         Ok(entries) => entries,
