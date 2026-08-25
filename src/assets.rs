@@ -1,4 +1,8 @@
+use std::collections::HashMap;
+use std::fmt;
 use std::path::{Path, PathBuf};
+
+use crate::library::discover_categories;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(dead_code)]
@@ -47,6 +51,83 @@ fn classify_extension(path: &Path) -> Option<AssetKind> {
     }
 }
 
+#[allow(dead_code)]
+pub struct AssetSelector {
+    categories: HashMap<String, Vec<Asset>>,
+    cursors: HashMap<String, usize>,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub enum SelectorError {
+    Io(std::io::Error),
+    EmptyLibrary { category: String },
+}
+
+impl fmt::Display for SelectorError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SelectorError::Io(e) => write!(f, "failed to read asset library: {e}"),
+            SelectorError::EmptyLibrary { category } => {
+                write!(
+                    f,
+                    "category {category:?} has no assets, and the general/ fallback is also empty"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for SelectorError {}
+
+impl From<std::io::Error> for SelectorError {
+    fn from(e: std::io::Error) -> Self {
+        SelectorError::Io(e)
+    }
+}
+
+#[allow(dead_code)]
+impl AssetSelector {
+    pub fn new(assets_dir: &Path) -> Result<Self, std::io::Error> {
+        let category_names = discover_categories(assets_dir)?;
+
+        let mut categories = HashMap::new();
+        for name in category_names {
+            let assets = discover_assets(&assets_dir.join(&name))?;
+            categories.insert(name, assets);
+        }
+
+        Ok(AssetSelector {
+            categories,
+            cursors: HashMap::new(),
+        })
+    }
+
+    pub fn select(&mut self, category: &str) -> Result<Asset, SelectorError> {
+        let effective_category = match self.categories.get(category) {
+            Some(assets) if !assets.is_empty() => category,
+            _ => match self.categories.get("general") {
+                Some(assets) if !assets.is_empty() => "general",
+                _ => {
+                    return Err(SelectorError::EmptyLibrary {
+                        category: category.to_string(),
+                    })
+                }
+            },
+        };
+
+        let assets = &self.categories[effective_category];
+        let cursor = self
+            .cursors
+            .entry(effective_category.to_string())
+            .or_insert(0);
+        let asset = assets[*cursor % assets.len()].clone();
+        *cursor += 1;
+
+        Ok(asset)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,5 +168,75 @@ mod tests {
         let assets = discover_assets(dir.path()).unwrap();
 
         assert!(assets.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod selector_tests {
+    use super::*;
+    use std::path::Path;
+
+    fn write_asset(dir: &Path, name: &str) {
+        std::fs::write(dir.join(name), b"").unwrap();
+    }
+
+    #[test]
+    fn select_cycles_round_robin_within_a_category() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("city-broll")).unwrap();
+        write_asset(&dir.path().join("city-broll"), "a.jpg");
+        write_asset(&dir.path().join("city-broll"), "b.jpg");
+
+        let mut selector = AssetSelector::new(dir.path()).unwrap();
+
+        let first = selector.select("city-broll").unwrap();
+        let second = selector.select("city-broll").unwrap();
+        let third = selector.select("city-broll").unwrap();
+
+        assert_eq!(first.path, dir.path().join("city-broll").join("a.jpg"));
+        assert_eq!(second.path, dir.path().join("city-broll").join("b.jpg"));
+        assert_eq!(third.path, dir.path().join("city-broll").join("a.jpg"));
+    }
+
+    #[test]
+    fn select_falls_back_to_general_when_category_is_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("city-broll")).unwrap();
+        std::fs::create_dir(dir.path().join("general")).unwrap();
+        write_asset(&dir.path().join("general"), "filler.mp4");
+
+        let mut selector = AssetSelector::new(dir.path()).unwrap();
+
+        let asset = selector.select("city-broll").unwrap();
+
+        assert_eq!(asset.path, dir.path().join("general").join("filler.mp4"));
+    }
+
+    #[test]
+    fn select_falls_back_to_general_for_unknown_category() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("general")).unwrap();
+        write_asset(&dir.path().join("general"), "filler.mp4");
+
+        let mut selector = AssetSelector::new(dir.path()).unwrap();
+
+        let asset = selector.select("does-not-exist").unwrap();
+
+        assert_eq!(asset.path, dir.path().join("general").join("filler.mp4"));
+    }
+
+    #[test]
+    fn select_errors_when_category_and_general_are_both_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("city-broll")).unwrap();
+
+        let mut selector = AssetSelector::new(dir.path()).unwrap();
+
+        match selector.select("city-broll") {
+            Err(SelectorError::EmptyLibrary { category }) => {
+                assert_eq!(category, "city-broll");
+            }
+            other => panic!("expected EmptyLibrary error, got {other:?}"),
+        }
     }
 }
