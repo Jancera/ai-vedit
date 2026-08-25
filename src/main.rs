@@ -2,6 +2,7 @@ mod cache;
 mod cli;
 mod config;
 mod library;
+mod plan_file;
 mod planner;
 mod whisper;
 
