@@ -2,6 +2,7 @@ mod cache;
 mod cli;
 mod config;
 mod library;
+mod planner;
 mod whisper;
 
 use clap::Parser;
