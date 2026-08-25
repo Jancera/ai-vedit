@@ -1,3 +1,4 @@
+mod assets;
 mod cache;
 mod cli;
 mod config;
