@@ -1,15 +1,15 @@
 # Roadmap
 
 The design in [README.md](README.md) is settled, and M0 (project scaffolding),
-M1 (transcription), and M2 (planning agent) are now implemented. This roadmap
-breaks the design into milestones so contributors can see what's planned and
-pick up a piece.
+M1 (transcription), M2 (planning agent), and M3 (asset library) are now
+implemented. This roadmap breaks the design into milestones so contributors
+can see what's planned and pick up a piece.
 
 The canonical, up-to-date backlog lives in
 [GitHub Issues](../../issues) (look for `good first issue` and `help wanted`
 labels). This file tracks the higher-level milestones those issues fall under.
 
-## Status: 🟡 In progress — M0, M1, M2 complete
+## Status: 🟡 In progress — M0, M1, M2, M3 complete
 
 ## Milestones
 
@@ -31,11 +31,10 @@ labels). This file tracks the higher-level milestones those issues fall under.
 - [x] Per-category time-budget report (printed to the terminal)
 - [x] Plan file format (JSON) — schema for beats + categories
 
-### M3 — Asset library
-- Category discovery by scanning `assets/<category>/` folders
-- Supported types: `.jpg`, `.png`, `.webp`, `.mp4`
-- Round-robin asset selection within a category (prefer unused files)
-- `general/` fallback category handling
+### M3 — Asset library ✅ done
+- [x] Supported types: `.jpg`, `.jpeg`, `.png`, `.webp`, `.mp4`
+- [x] Round-robin asset selection within a category (prefer unused files)
+- [x] `general/` fallback category handling
 
 ### M4 — Render pipeline
 - ffmpeg invocation layer (shell-out + command construction)

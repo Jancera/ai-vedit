@@ -48,11 +48,11 @@ assets/
 ```
 
 - The folder name *is* the category name, discovered by scanning the directory.
-- Supported asset types: images (`.jpg`, `.png`, `.webp`) and video (`.mp4`).
+- Supported asset types: images (`.jpg`, `.jpeg`, `.png`, `.webp`) and video (`.mp4`).
 - A reserved `general/` category acts as a fallback when no specific category fits a
-  beat, or when a chosen category runs out of unused assets.
-- Within a category, assets are picked by simple rotation (round-robin, preferring
-  files not yet used) — no content-matching in the MVP.
+  beat, or when the chosen category has no assets at all (empty or missing folder).
+- Within a category, assets are picked by simple rotation (round-robin): every file
+  is used once before any file repeats — no content-matching in the MVP.
 
 ## CLI usage
 
@@ -99,15 +99,17 @@ ai-vedit render --plan plan.json [--assets ./assets] [--out output.mp4] [--aspec
 
 ## Status
 
-M0 (CLI skeleton), M1 (transcription), and M2 (planning agent) are
-implemented: the `plan` and `render` subcommands parse arguments and
-validate config (`OPENAI_API_KEY`), and `plan` transcribes audio via the
-OpenAI Whisper API (caching the result locally), then segments the
-transcript into beats matched to asset categories via the OpenAI chat
-completions API, writes `plan.json`, and prints a per-category time-budget
-report. It doesn't yet do asset selection (M3) or rendering (M4). See
-[ROADMAP.md](ROADMAP.md) for planned milestones and
-[CONTRIBUTING.md](CONTRIBUTING.md) if you'd like to help.
+M0 (CLI skeleton), M1 (transcription), M2 (planning agent), and M3 (asset
+library) are implemented: the `plan` and `render` subcommands parse
+arguments and validate config (`OPENAI_API_KEY`), and `plan` transcribes
+audio via the OpenAI Whisper API (caching the result locally), then
+segments the transcript into beats matched to asset categories via the
+OpenAI chat completions API, writes `plan.json`, and prints a per-category
+time-budget report. Asset-selection logic (file discovery + round-robin
+selection with `general/` fallback) is implemented as a library, but it
+isn't wired into `render` yet — that's M4. See [ROADMAP.md](ROADMAP.md) for
+planned milestones and [CONTRIBUTING.md](CONTRIBUTING.md) if you'd like to
+help.
 
 ## License
 
