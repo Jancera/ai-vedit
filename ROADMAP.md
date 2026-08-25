@@ -1,14 +1,14 @@
 # Roadmap
 
 The design in [README.md](README.md) is settled, and M0 (project scaffolding)
-is now implemented. This roadmap breaks the design into milestones so
-contributors can see what's planned and pick up a piece.
+and M1 (transcription) are now implemented. This roadmap breaks the design
+into milestones so contributors can see what's planned and pick up a piece.
 
 The canonical, up-to-date backlog lives in
 [GitHub Issues](../../issues) (look for `good first issue` and `help wanted`
 labels). This file tracks the higher-level milestones those issues fall under.
 
-## Status: 🟡 In progress — M0 complete
+## Status: 🟡 In progress — M0, M1 complete
 
 ## Milestones
 
@@ -18,10 +18,10 @@ labels). This file tracks the higher-level milestones those issues fall under.
 - [x] Config/env handling (`OPENAI_API_KEY`)
 - [x] CI: `cargo build`, `cargo test`, `cargo clippy`, `cargo fmt --check`
 
-### M1 — Transcription
-- OpenAI Whisper API client (`whisper-1`, `verbose_json` for timestamps)
-- Local transcript caching (avoid re-billing on repeated runs)
-- Error handling for API failures / invalid audio input
+### M1 — Transcription ✅ done
+- [x] OpenAI Whisper API client (`whisper-1`, `verbose_json` for timestamps)
+- [x] Local transcript caching (avoid re-billing on repeated runs)
+- [x] Error handling for API failures / invalid audio input
 
 ### M2 — Planning agent
 - OpenAI chat completions client with structured output
