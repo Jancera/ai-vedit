@@ -1,4 +1,6 @@
+use std::fmt;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use crate::cli::AspectRatio;
 
@@ -112,6 +114,53 @@ pub fn mux_audio_command(video_path: &Path, audio_path: &Path, output_path: &Pat
         "-shortest".to_string(),
         output_path.to_string_lossy().to_string(),
     ]
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub enum RenderError {
+    Ffmpeg {
+        command: Vec<String>,
+        stderr: String,
+    },
+    Io(std::io::Error),
+}
+
+impl fmt::Display for RenderError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RenderError::Ffmpeg { command, stderr } => {
+                write!(
+                    f,
+                    "ffmpeg failed running `ffmpeg {}`: {stderr}",
+                    command.join(" ")
+                )
+            }
+            RenderError::Io(e) => write!(f, "failed to run ffmpeg: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for RenderError {}
+
+impl From<std::io::Error> for RenderError {
+    fn from(e: std::io::Error) -> Self {
+        RenderError::Io(e)
+    }
+}
+
+#[allow(dead_code)]
+pub fn run_ffmpeg(args: &[String]) -> Result<(), RenderError> {
+    let output = Command::new("ffmpeg").args(args).output()?;
+
+    if !output.status.success() {
+        return Err(RenderError::Ffmpeg {
+            command: args.to_vec(),
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        });
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
