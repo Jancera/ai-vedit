@@ -69,6 +69,8 @@ ai-vedit plan --audio script.mp3 [--assets ./assets] [--aspect 16:9|9:16]
 - Writes a plan file (JSON) and prints the time-budget report to the terminal.
 - If new categories were proposed, lists which folders need to be created before
   rendering.
+- `plan.json` is written to the current working directory and is overwritten on
+  each run (there is no `--out` flag for `plan` yet).
 
 ### `render`
 
@@ -97,12 +99,15 @@ ai-vedit render --plan plan.json [--assets ./assets] [--out output.mp4] [--aspec
 
 ## Status
 
-M0 (CLI skeleton) and M1 (transcription) are implemented: the `plan` and
-`render` subcommands parse arguments and validate config (`OPENAI_API_KEY`),
-and `plan` now transcribes audio via the OpenAI Whisper API and caches the
-result locally. It doesn't yet do beat segmentation or category planning
-(M2) or rendering (M3-M4). See [ROADMAP.md](ROADMAP.md) for planned
-milestones and [CONTRIBUTING.md](CONTRIBUTING.md) if you'd like to help.
+M0 (CLI skeleton), M1 (transcription), and M2 (planning agent) are
+implemented: the `plan` and `render` subcommands parse arguments and
+validate config (`OPENAI_API_KEY`), and `plan` transcribes audio via the
+OpenAI Whisper API (caching the result locally), then segments the
+transcript into beats matched to asset categories via the OpenAI chat
+completions API, writes `plan.json`, and prints a per-category time-budget
+report. It doesn't yet do asset selection (M3) or rendering (M4). See
+[ROADMAP.md](ROADMAP.md) for planned milestones and
+[CONTRIBUTING.md](CONTRIBUTING.md) if you'd like to help.
 
 ## License
 

@@ -1,14 +1,15 @@
 # Roadmap
 
-The design in [README.md](README.md) is settled, and M0 (project scaffolding)
-and M1 (transcription) are now implemented. This roadmap breaks the design
-into milestones so contributors can see what's planned and pick up a piece.
+The design in [README.md](README.md) is settled, and M0 (project scaffolding),
+M1 (transcription), and M2 (planning agent) are now implemented. This roadmap
+breaks the design into milestones so contributors can see what's planned and
+pick up a piece.
 
 The canonical, up-to-date backlog lives in
 [GitHub Issues](../../issues) (look for `good first issue` and `help wanted`
 labels). This file tracks the higher-level milestones those issues fall under.
 
-## Status: 🟡 In progress — M0, M1 complete
+## Status: 🟡 In progress — M0, M1, M2 complete
 
 ## Milestones
 
@@ -23,12 +24,12 @@ labels). This file tracks the higher-level milestones those issues fall under.
 - [x] Local transcript caching (avoid re-billing on repeated runs)
 - [x] Error handling for API failures / invalid audio input
 
-### M2 — Planning agent
-- OpenAI chat completions client with structured output
-- Beat segmentation from timestamped transcript (start/end time, description)
-- Category matching: pick from existing asset folders, or propose new ones
-- Per-category time-budget report (terminal output + saved plan file)
-- Plan file format (JSON) — schema for beats + categories
+### M2 — Planning agent ✅ done
+- [x] OpenAI chat completions client with structured output
+- [x] Beat segmentation from timestamped transcript (start/end time, description)
+- [x] Category matching: pick from existing asset folders, or propose new ones
+- [x] Per-category time-budget report (printed to the terminal)
+- [x] Plan file format (JSON) — schema for beats + categories
 
 ### M3 — Asset library
 - Category discovery by scanning `assets/<category>/` folders
