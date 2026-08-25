@@ -78,9 +78,8 @@ ai-vedit plan --audio script.mp3 [--assets ./assets] [--aspect 16:9|9:16]
 ai-vedit render --plan plan.json [--assets ./assets] [--out output.mp4] [--aspect 16:9|9:16]
 ```
 
-- Validates that every category in the plan has at least one asset (falling back to
-  `general/`, erroring if that's also empty).
-- For each beat: picks an asset from its category.
+- For each beat: picks an asset from its category, falling back to `general/` if the
+  category has no assets, and erroring out at that beat if `general/` is also empty.
   - Images: held for the beat's duration with a Ken Burns (slow zoom/pan) effect.
   - Videos: trimmed to fit if longer than the beat, looped if shorter.
 - Concatenates all beat clips, overlays the original narration audio, and encodes to
@@ -99,17 +98,20 @@ ai-vedit render --plan plan.json [--assets ./assets] [--out output.mp4] [--aspec
 
 ## Status
 
-M0 (CLI skeleton), M1 (transcription), M2 (planning agent), and M3 (asset
-library) are implemented: the `plan` and `render` subcommands parse
-arguments and validate config (`OPENAI_API_KEY`), and `plan` transcribes
-audio via the OpenAI Whisper API (caching the result locally), then
-segments the transcript into beats matched to asset categories via the
-OpenAI chat completions API, writes `plan.json`, and prints a per-category
-time-budget report. Asset-selection logic (file discovery + round-robin
-selection with `general/` fallback) is implemented as a library, but it
-isn't wired into `render` yet — that's M4. See [ROADMAP.md](ROADMAP.md) for
-planned milestones and [CONTRIBUTING.md](CONTRIBUTING.md) if you'd like to
-help.
+M0 (CLI skeleton), M1 (transcription), M2 (planning agent), M3 (asset
+library), and M4 (render pipeline) are implemented: the `plan` and `render`
+subcommands parse arguments and validate config (`OPENAI_API_KEY`), and
+`plan` transcribes audio via the OpenAI Whisper API (caching the result
+locally), then segments the transcript into beats matched to asset
+categories via the OpenAI chat completions API, writes `plan.json`, and
+prints a per-category time-budget report. `render` wires up asset selection
+(file discovery + round-robin selection with `general/` fallback) with an
+ffmpeg rendering pipeline: it generates a full video with a Ken Burns
+effect for images, loop-and-trim for video clips, concatenates all beat
+clips, and overlays the narration audio. The full `plan` → `render`
+pipeline is now functionally complete end to end; M5 (polish) is what
+remains. See [ROADMAP.md](ROADMAP.md) for planned milestones and
+[CONTRIBUTING.md](CONTRIBUTING.md) if you'd like to help.
 
 ## License
 
