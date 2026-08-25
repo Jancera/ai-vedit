@@ -4,10 +4,8 @@ use std::process::Command;
 
 use crate::cli::AspectRatio;
 
-#[allow(dead_code)]
 pub const FPS: u32 = 60;
 
-#[allow(dead_code)]
 pub fn resolution_for(aspect: AspectRatio) -> (u32, u32) {
     match aspect {
         AspectRatio::Sixteen9 => (1920, 1080),
@@ -15,7 +13,6 @@ pub fn resolution_for(aspect: AspectRatio) -> (u32, u32) {
     }
 }
 
-#[allow(dead_code)]
 pub fn ken_burns_command(
     image_path: &Path,
     duration: f64,
@@ -42,7 +39,6 @@ pub fn ken_burns_command(
     ]
 }
 
-#[allow(dead_code)]
 pub fn video_clip_command(
     video_path: &Path,
     duration: f64,
@@ -71,7 +67,6 @@ pub fn video_clip_command(
     ]
 }
 
-#[allow(dead_code)]
 pub fn concat_list_content(clip_paths: &[PathBuf]) -> String {
     clip_paths
         .iter()
@@ -79,7 +74,6 @@ pub fn concat_list_content(clip_paths: &[PathBuf]) -> String {
         .collect()
 }
 
-#[allow(dead_code)]
 pub fn concat_command(list_path: &Path, output_path: &Path) -> Vec<String> {
     vec![
         "-y".to_string(),
@@ -95,7 +89,6 @@ pub fn concat_command(list_path: &Path, output_path: &Path) -> Vec<String> {
     ]
 }
 
-#[allow(dead_code)]
 pub fn mux_audio_command(video_path: &Path, audio_path: &Path, output_path: &Path) -> Vec<String> {
     vec![
         "-y".to_string(),
@@ -117,7 +110,6 @@ pub fn mux_audio_command(video_path: &Path, audio_path: &Path, output_path: &Pat
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub enum RenderError {
     Ffmpeg {
         command: Vec<String>,
@@ -149,7 +141,6 @@ impl From<std::io::Error> for RenderError {
     }
 }
 
-#[allow(dead_code)]
 pub fn run_ffmpeg(args: &[String]) -> Result<(), RenderError> {
     let output = Command::new("ffmpeg").args(args).output()?;
 

@@ -338,22 +338,19 @@ fn render_without_plan_arg_fails() {
 }
 
 #[test]
-fn render_uses_default_assets_and_out() {
-    let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
-    cmd.args(["render", "--plan", "plan.json"]);
-    cmd.env_remove("OPENAI_API_KEY");
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("assets=\"assets\""))
-        .stdout(predicate::str::contains("out=\"output.mp4\""));
-}
+fn render_fails_cleanly_without_api_key_when_plan_file_is_missing() {
+    // `render` now actually loads the plan file (M4), so a missing plan.json
+    // at the default location fails with a plan-file error — and, unlike
+    // `plan`, it never touches OPENAI_API_KEY to get there.
+    let dir = tempfile::tempdir().unwrap();
 
-#[test]
-fn render_does_not_require_api_key() {
     let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
+    cmd.current_dir(dir.path());
     cmd.args(["render", "--plan", "plan.json"]);
     cmd.env_remove("OPENAI_API_KEY");
     cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("render: not yet implemented"));
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("failed to load plan file"))
+        .stderr(predicate::str::contains("OPENAI_API_KEY").not());
 }

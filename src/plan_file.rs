@@ -13,8 +13,6 @@ pub struct PlanFile {
     pub beats: Vec<Beat>,
 }
 
-// TODO(M4): remove once render calls load
-#[allow(dead_code)]
 #[derive(Debug)]
 pub enum PlanFileError {
     Io(std::io::Error),
@@ -43,8 +41,6 @@ pub fn save(path: &Path, plan_file: &PlanFile) -> Result<(), std::io::Error> {
     std::fs::write(path, content)
 }
 
-// TODO(M4): remove once render calls load
-#[allow(dead_code)]
 pub fn load(path: &Path) -> Result<PlanFile, PlanFileError> {
     let content = std::fs::read_to_string(path)?;
     serde_json::from_str(&content).map_err(PlanFileError::Json)

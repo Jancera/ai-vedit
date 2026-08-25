@@ -52,7 +52,6 @@ fn classify_extension(path: &Path) -> Option<AssetKind> {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct Selection {
     pub asset: Asset,
     pub used_fallback: bool,
