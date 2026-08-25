@@ -5,6 +5,7 @@ mod config;
 mod library;
 mod plan_file;
 mod planner;
+mod render;
 mod whisper;
 
 use clap::Parser;
