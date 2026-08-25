@@ -162,7 +162,7 @@ fn plan_defaults_to_assets_dir() {
 }
 
 #[test]
-fn plan_prints_transcription_summary_and_cache_path() {
+fn plan_caches_transcript_to_disk() {
     let dir = tempfile::tempdir().unwrap();
     let audio_path = write_fixture_audio(dir.path());
     let mut server = mockito::Server::new();

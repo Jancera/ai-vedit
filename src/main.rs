@@ -34,8 +34,13 @@ fn run_plan(args: PlanArgs) {
         }
     };
 
-    let base_url = std::env::var("AI_VEDIT_OPENAI_BASE_URL")
-        .unwrap_or_else(|_| "https://api.openai.com".to_string());
+    let base_url = match std::env::var("AI_VEDIT_OPENAI_BASE_URL") {
+        Ok(url) => {
+            eprintln!("note: using OpenAI base URL {url} from AI_VEDIT_OPENAI_BASE_URL");
+            url
+        }
+        Err(_) => "https://api.openai.com".to_string(),
+    };
 
     let cache_path = match cache::cache_path_for(&args.audio) {
         Ok(path) => path,
@@ -98,15 +103,10 @@ fn run_plan(args: PlanArgs) {
         std::process::exit(1);
     }
 
-    print_report(&plan_file, &existing_categories, plan_path, &args.assets);
+    print_report(&plan_file, plan_path, &args.assets);
 }
 
-fn print_report(
-    plan_file: &PlanFile,
-    existing_categories: &[String],
-    plan_path: &std::path::Path,
-    assets_dir: &std::path::Path,
-) {
+fn print_report(plan_file: &PlanFile, plan_path: &std::path::Path, assets_dir: &std::path::Path) {
     use std::collections::BTreeMap;
 
     let mut budgets: BTreeMap<&str, (usize, f64)> = BTreeMap::new();
@@ -139,8 +139,6 @@ fn print_report(
             println!("  {category}");
         }
     }
-
-    let _ = existing_categories;
 }
 
 fn run_render(args: RenderArgs) {

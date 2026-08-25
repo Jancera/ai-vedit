@@ -79,7 +79,12 @@ pub fn plan_beats(
     let url = format!("{base_url}/v1/chat/completions");
     let body = build_request_body(transcript, existing_categories);
 
-    let result = ureq::post(&url)
+    let agent = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(120))
+        .build();
+
+    let result = agent
+        .post(&url)
         .set("Authorization", &format!("Bearer {api_key}"))
         .set("Content-Type", "application/json")
         .send_string(&body.to_string());
