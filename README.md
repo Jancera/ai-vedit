@@ -62,7 +62,8 @@ assets/
 ai-vedit plan --audio script.mp3 [--assets ./assets] [--aspect 16:9|9:16]
 ```
 
-- Transcribes the audio (transcript is cached to disk to avoid re-billing).
+- Transcribes the audio (transcript is cached to disk at
+  `<audio_dir>/.cache/<sha256-hash>.json` to avoid re-billing).
 - Produces a shot list: beats with timestamps, assigned category, and a per-category
   time-budget report.
 - Writes a plan file (JSON) and prints the time-budget report to the terminal.
@@ -96,9 +97,11 @@ ai-vedit render --plan plan.json [--assets ./assets] [--out output.mp4] [--aspec
 
 ## Status
 
-M0 (CLI skeleton) is implemented: the `plan` and `render` subcommands parse
-arguments and validate config (`OPENAI_API_KEY`), but don't yet transcribe,
-plan, or render — that's M1-M4. See [ROADMAP.md](ROADMAP.md) for planned
+M0 (CLI skeleton) and M1 (transcription) are implemented: the `plan` and
+`render` subcommands parse arguments and validate config (`OPENAI_API_KEY`),
+and `plan` now transcribes audio via the OpenAI Whisper API and caches the
+result locally. It doesn't yet do beat segmentation or category planning
+(M2) or rendering (M3-M4). See [ROADMAP.md](ROADMAP.md) for planned
 milestones and [CONTRIBUTING.md](CONTRIBUTING.md) if you'd like to help.
 
 ## License

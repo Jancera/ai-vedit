@@ -1,8 +1,8 @@
 # Contributing to ai-vedit
 
-Thanks for your interest in contributing! The CLI skeleton (M0) is in place —
-read [README.md](README.md) for the architecture and [ROADMAP.md](ROADMAP.md)
-for what's planned and what's not.
+Thanks for your interest in contributing! The CLI skeleton (M0) is in place,
+and transcription (M1) is done too — read [README.md](README.md) for the
+architecture and [ROADMAP.md](ROADMAP.md) for what's planned and what's not.
 
 ## Where to start
 
