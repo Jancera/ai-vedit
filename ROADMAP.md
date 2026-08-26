@@ -1,15 +1,16 @@
 # Roadmap
 
 The design in [README.md](README.md) is settled, and M0 (project scaffolding),
-M1 (transcription), M2 (planning agent), M3 (asset library), and M4 (render
-pipeline) are now implemented. This roadmap breaks the design into
-milestones so contributors can see what's planned and pick up a piece.
+M1 (transcription), M2 (planning agent), M3 (asset library), M4 (render
+pipeline), and M5 (polish) are now implemented, completing the MVP. This
+roadmap breaks the design into milestones so contributors can see what's
+planned and pick up a piece.
 
 The canonical, up-to-date backlog lives in
 [GitHub Issues](../../issues) (look for `good first issue` and `help wanted`
 labels). This file tracks the higher-level milestones those issues fall under.
 
-## Status: 🟡 In progress — M0, M1, M2, M3, M4 complete
+## Status: ✅ MVP complete — M0, M1, M2, M3, M4, M5 complete
 
 ## Milestones
 
@@ -43,11 +44,11 @@ labels). This file tracks the higher-level milestones those issues fall under.
 - [x] Concatenation of beat clips + narration audio overlay
 - [x] Aspect ratio config (`--aspect 16:9|9:16`, default 16:9 1920x1080)
 
-### M5 — Polish
-- Clear error messages (missing/empty categories, ffmpeg failures with the
+### M5 — Polish ✅ done
+- [x] Clear error messages (missing/empty categories, ffmpeg failures with the
   failing command shown)
-- End-to-end integration test (sample audio + sample assets → rendered output)
-- Usage docs / examples in README
+- [x] End-to-end integration test (sample audio + sample assets → rendered output)
+- [x] Usage docs / examples in README
 
 ## Ideas beyond the MVP (not committed yet)
 
