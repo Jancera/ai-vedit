@@ -54,7 +54,7 @@ pub struct Selection {
     pub used_fallback: bool,
 }
 
-fn normalize_category(name: &str) -> String {
+pub(crate) fn normalize_category(name: &str) -> String {
     name.trim().to_lowercase()
 }
 
