@@ -24,6 +24,25 @@ script.mp3 --> transcribe --> agent plans shot list --> user fills asset categor
    duration, and stitches everything together with ffmpeg over the original narration
    audio.
 
+## Quickstart
+
+```bash
+export OPENAI_API_KEY=sk-...
+
+mkdir -p assets/general
+# add a few images/videos to assets/general/, or create category folders
+# like assets/city-broll/ ahead of time if you already know your beats
+
+ai-vedit plan --audio script.mp3
+# writes plan.json, prints a time-budget report, and lists any new
+# categories the plan proposes that you still need to create
+
+# fill in any newly-proposed category folders under assets/, then:
+ai-vedit render --plan plan.json --out output.mp4
+```
+
+See [CLI usage](#cli-usage) below for the full flag reference.
+
 ## Tech stack
 
 - **Language**: Rust
