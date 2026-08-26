@@ -26,10 +26,10 @@ pub fn discover_assets(category_dir: &Path) -> Result<Vec<Asset>, std::io::Error
     let mut assets = Vec::new();
     for entry in entries {
         let entry = entry?;
-        if !entry.file_type()?.is_file() {
+        let path = entry.path();
+        if !std::fs::metadata(&path)?.is_file() {
             continue;
         }
-        let path = entry.path();
         if let Some(kind) = classify_extension(&path) {
             assets.push(Asset { path, kind });
         }
@@ -52,6 +52,10 @@ fn classify_extension(path: &Path) -> Option<AssetKind> {
 pub struct Selection {
     pub asset: Asset,
     pub used_fallback: bool,
+}
+
+pub(crate) fn normalize_category(name: &str) -> String {
+    name.trim().to_lowercase()
 }
 
 pub struct AssetSelector {
@@ -94,7 +98,7 @@ impl AssetSelector {
         let mut categories = HashMap::new();
         for name in category_names {
             let assets = discover_assets(&assets_dir.join(&name))?;
-            categories.insert(name, assets);
+            categories.insert(normalize_category(&name), assets);
         }
 
         Ok(AssetSelector {
@@ -104,10 +108,12 @@ impl AssetSelector {
     }
 
     pub fn select(&mut self, category: &str) -> Result<Selection, SelectorError> {
-        let effective_category = match self.categories.get(category) {
-            Some(assets) if !assets.is_empty() => category,
+        let requested = normalize_category(category);
+
+        let effective_category = match self.categories.get(&requested) {
+            Some(assets) if !assets.is_empty() => requested.clone(),
             _ => match self.categories.get("general") {
-                Some(assets) if !assets.is_empty() => "general",
+                Some(assets) if !assets.is_empty() => "general".to_string(),
                 _ => {
                     return Err(SelectorError::EmptyLibrary {
                         category: category.to_string(),
@@ -116,13 +122,10 @@ impl AssetSelector {
             },
         };
 
-        let used_fallback = effective_category != category;
+        let used_fallback = effective_category != requested;
 
-        let assets = &self.categories[effective_category];
-        let cursor = self
-            .cursors
-            .entry(effective_category.to_string())
-            .or_insert(0);
+        let assets = &self.categories[&effective_category];
+        let cursor = self.cursors.entry(effective_category.clone()).or_insert(0);
         let asset = assets[*cursor % assets.len()].clone();
         *cursor += 1;
 
@@ -173,6 +176,21 @@ mod tests {
         let assets = discover_assets(dir.path()).unwrap();
 
         assert!(assets.is_empty());
+    }
+
+    #[test]
+    fn discover_assets_follows_symlinked_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let real_file = dir.path().join("real.jpg");
+        std::fs::write(&real_file, b"").unwrap();
+        std::os::unix::fs::symlink(&real_file, dir.path().join("linked.jpg")).unwrap();
+
+        let mut assets = discover_assets(dir.path()).unwrap();
+        assets.sort_by(|a, b| a.path.cmp(&b.path));
+
+        assert_eq!(assets.len(), 2);
+        assert_eq!(assets[0].path, dir.path().join("linked.jpg"));
+        assert_eq!(assets[1].path, dir.path().join("real.jpg"));
     }
 }
 
@@ -279,5 +297,22 @@ mod selector_tests {
             }
             other => panic!("expected EmptyLibrary error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn select_matches_category_case_insensitively_and_trims_whitespace() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("city-broll")).unwrap();
+        write_asset(&dir.path().join("city-broll"), "a.jpg");
+
+        let mut selector = AssetSelector::new(dir.path()).unwrap();
+
+        let selection = selector.select("  City-Broll  ").unwrap();
+
+        assert_eq!(
+            selection.asset.path,
+            dir.path().join("city-broll").join("a.jpg")
+        );
+        assert!(!selection.used_fallback);
     }
 }

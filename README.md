@@ -24,6 +24,34 @@ script.mp3 --> transcribe --> agent plans shot list --> user fills asset categor
    duration, and stitches everything together with ffmpeg over the original narration
    audio.
 
+## Quickstart
+
+Prerequisites:
+
+- [`ffmpeg`](https://ffmpeg.org/) installed and on your `PATH`.
+- The `ai-vedit` binary, built from source (no published binary yet):
+  `cargo build --release` produces `target/release/ai-vedit`, or run
+  `cargo install --path .` to put `ai-vedit` on your `PATH` so the commands
+  below work as shown.
+- An `OPENAI_API_KEY` (used for transcription and planning, set below).
+
+```bash
+export OPENAI_API_KEY=sk-...
+
+mkdir -p assets/general
+# add a few images/videos to assets/general/, or create category folders
+# like assets/city-broll/ ahead of time if you already know your beats
+
+ai-vedit plan --audio script.mp3
+# writes plan.json, prints a time-budget report, and lists any new
+# categories the plan proposes that you still need to create
+
+# fill in any newly-proposed category folders under assets/, then:
+ai-vedit render --plan plan.json --out output.mp4
+```
+
+See [CLI usage](#cli-usage) below for the full flag reference.
+
 ## Tech stack
 
 - **Language**: Rust
@@ -99,19 +127,23 @@ ai-vedit render --plan plan.json [--assets ./assets] [--out output.mp4] [--aspec
 ## Status
 
 M0 (CLI skeleton), M1 (transcription), M2 (planning agent), M3 (asset
-library), and M4 (render pipeline) are implemented: the `plan` and `render`
-subcommands parse arguments and validate config (`OPENAI_API_KEY`), and
-`plan` transcribes audio via the OpenAI Whisper API (caching the result
-locally), then segments the transcript into beats matched to asset
-categories via the OpenAI chat completions API, writes `plan.json`, and
-prints a per-category time-budget report. `render` wires up asset selection
-(file discovery + round-robin selection with `general/` fallback) with an
-ffmpeg rendering pipeline: it generates a full video with a Ken Burns
-effect for images, loop-and-trim for video clips, concatenates all beat
-clips, and overlays the narration audio. The full `plan` → `render`
-pipeline is now functionally complete end to end; M5 (polish) is what
-remains. See [ROADMAP.md](ROADMAP.md) for planned milestones and
-[CONTRIBUTING.md](CONTRIBUTING.md) if you'd like to help.
+library), M4 (render pipeline), and M5 (polish) are implemented: the `plan`
+and `render` subcommands parse arguments and validate config
+(`OPENAI_API_KEY`), and `plan` transcribes audio via the OpenAI Whisper API
+(caching the result locally), then segments the transcript into beats
+matched to asset categories via the OpenAI chat completions API, writes
+`plan.json`, and prints a per-category time-budget report. `render` wires
+up asset selection (file discovery + round-robin selection with `general/`
+fallback) with an ffmpeg rendering pipeline: it generates a full video with
+a Ken Burns effect for images, loop-and-trim for video clips, concatenates
+all beat clips, and overlays the narration audio. M5 added case/whitespace-
+tolerant category matching, symlink-following asset/category discovery,
+clearer error messages, a real end-to-end integration test, and this
+Quickstart. The full `plan` → `render` pipeline is functionally complete
+end to end, completing the MVP (M0-M5). Anything further is tracked under
+["Ideas beyond the MVP"](ROADMAP.md#ideas-beyond-the-mvp-not-committed-yet)
+in [ROADMAP.md](ROADMAP.md). See [CONTRIBUTING.md](CONTRIBUTING.md) if
+you'd like to help.
 
 ## License
 

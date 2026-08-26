@@ -138,7 +138,10 @@ impl fmt::Display for RenderError {
                     command.join(" ")
                 )
             }
-            RenderError::Io(e) => write!(f, "failed to run ffmpeg: {e}"),
+            RenderError::Io(e) => write!(
+                f,
+                "failed to run ffmpeg: {e} (is ffmpeg installed and on PATH?)"
+            ),
         }
     }
 }

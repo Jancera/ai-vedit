@@ -23,8 +23,8 @@ fn main() {
 }
 
 fn run_plan(args: PlanArgs) {
-    if let Err(e) = std::fs::metadata(&args.audio) {
-        eprintln!("error: cannot read audio file {:?}: {e}", args.audio);
+    if let Err(e) = std::fs::File::open(&args.audio) {
+        eprintln!("error: cannot open audio file {:?}: {e}", args.audio);
         std::process::exit(1);
     }
 
@@ -47,7 +47,10 @@ fn run_plan(args: PlanArgs) {
     let cache_path = match cache::cache_path_for(&args.audio) {
         Ok(path) => path,
         Err(e) => {
-            eprintln!("error: cannot read audio file {:?}: {e}", args.audio);
+            eprintln!(
+                "error: cannot hash audio file {:?} for caching: {e}",
+                args.audio
+            );
             std::process::exit(1);
         }
     };
@@ -111,9 +114,11 @@ fn run_plan(args: PlanArgs) {
 fn print_report(plan_file: &PlanFile, plan_path: &std::path::Path, assets_dir: &std::path::Path) {
     use std::collections::BTreeMap;
 
-    let mut budgets: BTreeMap<&str, (usize, f64)> = BTreeMap::new();
+    let mut budgets: BTreeMap<String, (usize, f64)> = BTreeMap::new();
     for beat in &plan_file.beats {
-        let entry = budgets.entry(beat.category.as_str()).or_insert((0, 0.0));
+        let entry = budgets
+            .entry(assets::normalize_category(&beat.category))
+            .or_insert((0, 0.0));
         entry.0 += 1;
         entry.1 += beat.end - beat.start;
     }
@@ -126,11 +131,11 @@ fn print_report(plan_file: &PlanFile, plan_path: &std::path::Path, assets_dir: &
         println!("  {category}: {count} {beat_word}, {seconds:.1}s");
     }
 
-    let new_categories: Vec<&str> = plan_file
+    let new_categories: Vec<String> = plan_file
         .beats
         .iter()
         .filter(|b| b.is_new_category)
-        .map(|b| b.category.as_str())
+        .map(|b| assets::normalize_category(&b.category))
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .collect();
