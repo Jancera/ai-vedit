@@ -13,7 +13,10 @@ impl fmt::Display for ConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ConfigError::MissingApiKey => {
-                write!(f, "OPENAI_API_KEY environment variable is not set")
+                write!(
+                    f,
+                    "OPENAI_API_KEY environment variable is not set or is empty"
+                )
             }
         }
     }

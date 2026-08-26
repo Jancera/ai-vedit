@@ -23,8 +23,8 @@ fn main() {
 }
 
 fn run_plan(args: PlanArgs) {
-    if let Err(e) = std::fs::metadata(&args.audio) {
-        eprintln!("error: cannot read audio file {:?}: {e}", args.audio);
+    if let Err(e) = std::fs::File::open(&args.audio) {
+        eprintln!("error: cannot open audio file {:?}: {e}", args.audio);
         std::process::exit(1);
     }
 
@@ -47,7 +47,10 @@ fn run_plan(args: PlanArgs) {
     let cache_path = match cache::cache_path_for(&args.audio) {
         Ok(path) => path,
         Err(e) => {
-            eprintln!("error: cannot read audio file {:?}: {e}", args.audio);
+            eprintln!(
+                "error: cannot hash audio file {:?} for caching: {e}",
+                args.audio
+            );
             std::process::exit(1);
         }
     };
