@@ -10,7 +10,7 @@ pub fn discover_categories(assets_dir: &Path) -> Result<Vec<String>, std::io::Er
     let mut categories = Vec::new();
     for entry in entries {
         let entry = entry?;
-        if entry.file_type()?.is_dir() {
+        if std::fs::metadata(entry.path())?.is_dir() {
             if let Some(name) = entry.file_name().to_str() {
                 categories.push(name.to_string());
             }
@@ -54,5 +54,18 @@ mod tests {
         let categories = discover_categories(dir.path()).unwrap();
 
         assert!(categories.is_empty());
+    }
+
+    #[test]
+    fn discover_categories_follows_symlinked_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let real_dir = dir.path().join("real-category");
+        std::fs::create_dir(&real_dir).unwrap();
+        std::os::unix::fs::symlink(&real_dir, dir.path().join("linked-category")).unwrap();
+
+        let mut categories = discover_categories(dir.path()).unwrap();
+        categories.sort();
+
+        assert_eq!(categories, vec!["linked-category", "real-category"]);
     }
 }
