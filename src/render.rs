@@ -21,8 +21,11 @@ pub fn ken_burns_command(
 ) -> Vec<String> {
     let (width, height) = resolution;
     let frames = (duration * FPS as f64).round() as u64;
+    let scale_crop = format!(
+        "scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}"
+    );
     let zoompan = format!(
-        "zoompan=z='min(zoom+0.0015,1.15)':d={frames}:s={width}x{height}:fps={FPS}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+        "{scale_crop},zoompan=z='min(zoom+0.0015,1.15)':d={frames}:s={width}x{height}:fps={FPS}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
     );
 
     vec![
@@ -51,8 +54,8 @@ pub fn video_clip_command(
     output_path: &Path,
 ) -> Vec<String> {
     let (width, height) = resolution;
-    let scale_pad = format!(
-        "scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2"
+    let scale_crop = format!(
+        "scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}"
     );
 
     vec![
@@ -65,7 +68,7 @@ pub fn video_clip_command(
         "-t".to_string(),
         format!("{duration:.3}"),
         "-vf".to_string(),
-        scale_pad,
+        scale_crop,
         "-an".to_string(),
         "-r".to_string(),
         FPS.to_string(),
@@ -198,7 +201,7 @@ mod tests {
                 "-t".to_string(),
                 "2.000".to_string(),
                 "-vf".to_string(),
-                "zoompan=z='min(zoom+0.0015,1.15)':d=120:s=1920x1080:fps=60:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+                "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,zoompan=z='min(zoom+0.0015,1.15)':d=120:s=1920x1080:fps=60:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
                     .to_string(),
                 "-r".to_string(),
                 "60".to_string(),
@@ -230,8 +233,7 @@ mod tests {
                 "-t".to_string(),
                 "3.500".to_string(),
                 "-vf".to_string(),
-                "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2"
-                    .to_string(),
+                "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920".to_string(),
                 "-an".to_string(),
                 "-r".to_string(),
                 "60".to_string(),
