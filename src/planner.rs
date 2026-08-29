@@ -216,6 +216,7 @@ mod tests {
                     text: "Then a product shot.".to_string(),
                 },
             ],
+            duration: 6.0,
         }
     }
 

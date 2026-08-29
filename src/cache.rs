@@ -46,6 +46,7 @@ mod tests {
                 end: 1.0,
                 text: "hello".to_string(),
             }],
+            duration: 1.0,
         }
     }
 
