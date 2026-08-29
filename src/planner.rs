@@ -81,6 +81,7 @@ pub fn plan_beats(
     api_key: &str,
     transcript: &Transcript,
     existing_categories: &[String],
+    min_beat_duration: f64,
 ) -> Result<Plan, PlannerError> {
     let url = format!("{base_url}/v1/chat/completions");
     let body = build_request_body(transcript, existing_categories);
@@ -128,6 +129,8 @@ pub fn plan_beats(
     for beat in &mut plan.beats {
         beat.duration = beat.end - beat.start;
     }
+
+    plan.beats = merge_short_beats(plan.beats, min_beat_duration);
 
     Ok(plan)
 }
@@ -196,6 +199,61 @@ fn build_request_body(
     })
 }
 
+fn group_duration(group: &[Beat]) -> f64 {
+    group.iter().map(|b| b.duration).sum()
+}
+
+fn collapse_group(group: Vec<Beat>) -> Beat {
+    let duration = group_duration(&group);
+    let start = group.first().map(|b| b.start).unwrap_or(0.0);
+    let end = group.last().map(|b| b.end).unwrap_or(0.0);
+    let representative = group
+        .into_iter()
+        .max_by(|a, b| {
+            a.duration
+                .partial_cmp(&b.duration)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .expect("merge group is never empty");
+
+    Beat {
+        start,
+        end,
+        duration,
+        description: representative.description,
+        category: representative.category,
+        is_new_category: representative.is_new_category,
+    }
+}
+
+/// Collapses consecutive beats into groups whose summed duration is at
+/// least `min_duration`, one merged `Beat` per group. A trailing group
+/// that never reaches `min_duration` (ran out of beats) is folded
+/// backward into the previous group instead of being emitted short.
+/// `start`/`end` on the returned beats are only a rough first pass
+/// (first sub-beat's start, last sub-beat's end) — `relayout_beats`
+/// (Task 4) is what makes them authoritative.
+fn merge_short_beats(beats: Vec<Beat>, min_duration: f64) -> Vec<Beat> {
+    let mut groups: Vec<Vec<Beat>> = Vec::new();
+
+    for beat in beats {
+        match groups.last_mut() {
+            Some(group) if group_duration(group) < min_duration => group.push(beat),
+            _ => groups.push(vec![beat]),
+        }
+    }
+
+    if groups.len() > 1 {
+        let trailing_is_short = group_duration(groups.last().unwrap()) < min_duration;
+        if trailing_is_short {
+            let trailing = groups.pop().unwrap();
+            groups.last_mut().unwrap().extend(trailing);
+        }
+    }
+
+    groups.into_iter().map(collapse_group).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -231,6 +289,72 @@ mod tests {
         )
     }
 
+    fn beat_with_duration(duration: f64, category: &str) -> Beat {
+        Beat {
+            start: 0.0,
+            end: duration,
+            duration,
+            description: category.to_string(),
+            category: category.to_string(),
+            is_new_category: false,
+        }
+    }
+
+    #[test]
+    fn merge_short_beats_returns_empty_for_no_beats() {
+        let merged = merge_short_beats(Vec::new(), 5.0);
+        assert!(merged.is_empty());
+    }
+
+    #[test]
+    fn merge_short_beats_leaves_beats_alone_when_each_meets_minimum() {
+        let beats = vec![beat_with_duration(5.0, "a"), beat_with_duration(6.0, "b")];
+
+        let merged = merge_short_beats(beats, 5.0);
+
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].category, "a");
+        assert_eq!(merged[1].category, "b");
+    }
+
+    #[test]
+    fn merge_short_beats_merges_consecutive_short_beats() {
+        let beats = vec![
+            beat_with_duration(1.0, "a"),
+            beat_with_duration(1.0, "b"),
+            beat_with_duration(4.0, "c"),
+        ];
+
+        let merged = merge_short_beats(beats, 5.0);
+
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].duration, 6.0);
+        assert_eq!(merged[0].category, "c");
+    }
+
+    #[test]
+    fn merge_short_beats_folds_short_trailing_group_backward() {
+        let beats = vec![
+            beat_with_duration(6.0, "long"),
+            beat_with_duration(2.0, "short-tail"),
+        ];
+
+        let merged = merge_short_beats(beats, 5.0);
+
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].duration, 8.0);
+        assert_eq!(merged[0].category, "long");
+    }
+
+    #[test]
+    fn merge_short_beats_is_noop_for_zero_minimum() {
+        let beats = vec![beat_with_duration(1.0, "a"), beat_with_duration(1.0, "b")];
+
+        let merged = merge_short_beats(beats, 0.0);
+
+        assert_eq!(merged.len(), 2);
+    }
+
     #[test]
     fn build_request_body_discourages_generic_catch_all_categories() {
         let transcript = sample_transcript();
@@ -256,7 +380,7 @@ mod tests {
         let transcript = sample_transcript();
         let categories = vec!["city-broll".to_string()];
 
-        let plan = plan_beats(&server.url(), "test-key", &transcript, &categories)
+        let plan = plan_beats(&server.url(), "test-key", &transcript, &categories, 0.0)
             .expect("expected successful plan");
 
         assert_eq!(plan.beats.len(), 2);
@@ -279,7 +403,7 @@ mod tests {
             .create();
 
         let transcript = sample_transcript();
-        let result = plan_beats(&server.url(), "bad-key", &transcript, &[]);
+        let result = plan_beats(&server.url(), "bad-key", &transcript, &[], 0.0);
 
         match result {
             Err(PlannerError::Api { status, message }) => {
@@ -300,7 +424,7 @@ mod tests {
             .create();
 
         let transcript = sample_transcript();
-        let result = plan_beats(&server.url(), "test-key", &transcript, &[]);
+        let result = plan_beats(&server.url(), "test-key", &transcript, &[], 0.0);
 
         match result {
             Err(PlannerError::Api { status, message }) => {
@@ -327,7 +451,7 @@ mod tests {
             .create();
 
         let transcript = sample_transcript();
-        let result = plan_beats(&server.url(), "test-key", &transcript, &[]);
+        let result = plan_beats(&server.url(), "test-key", &transcript, &[], 0.0);
 
         match result {
             Err(PlannerError::EmptyResponse) => {}

@@ -35,6 +35,10 @@ pub struct PlanArgs {
     /// Output aspect ratio
     #[arg(long, value_enum, default_value = "16:9")]
     pub aspect: AspectRatio,
+
+    /// Minimum duration (seconds) each beat should have; shorter beats are merged with neighbors
+    #[arg(long, default_value = "5.0")]
+    pub min_beat_duration: f64,
 }
 
 #[derive(Args, Debug)]

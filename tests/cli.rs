@@ -352,6 +352,73 @@ fn plan_surfaces_transcription_api_error() {
 }
 
 #[test]
+fn plan_rejects_non_positive_min_beat_duration() {
+    let dir = tempfile::tempdir().unwrap();
+    let audio_path = write_fixture_audio(dir.path());
+
+    let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
+    cmd.current_dir(dir.path());
+    cmd.args([
+        "plan",
+        "--audio",
+        audio_path.to_str().unwrap(),
+        "--min-beat-duration",
+        "0",
+    ]);
+    cmd.assert().failure().stderr(predicate::str::contains(
+        "--min-beat-duration must be greater than 0",
+    ));
+}
+
+#[test]
+fn plan_merges_beats_shorter_than_minimum_duration() {
+    let dir = tempfile::tempdir().unwrap();
+    let audio_path = write_fixture_audio(dir.path());
+    let mut server = mockito::Server::new();
+    let _mock = mock_successful_transcription(&mut server);
+
+    let content = r#"{"beats":[
+        {"start":0.0,"end":1.0,"description":"Intro","category":"intro","is_new_category":false},
+        {"start":1.0,"end":2.0,"description":"More intro","category":"intro","is_new_category":false},
+        {"start":2.0,"end":6.0,"description":"Main scene","category":"main-scene","is_new_category":true}
+    ]}"#;
+    let body = format!(
+        r#"{{"choices":[{{"message":{{"content":{}}}}}]}}"#,
+        serde_json::to_string(content).unwrap()
+    );
+    let _plan_mock = server
+        .mock("POST", "/v1/chat/completions")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(body)
+        .create();
+
+    let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
+    cmd.current_dir(dir.path());
+    cmd.args([
+        "plan",
+        "--audio",
+        audio_path.to_str().unwrap(),
+        "--min-beat-duration",
+        "5",
+    ]);
+    cmd.env("OPENAI_API_KEY", "test-key");
+    cmd.env("AI_VEDIT_OPENAI_BASE_URL", server.url());
+    cmd.assert().success();
+
+    let plan_json = std::fs::read_to_string(dir.path().join("plan.json")).unwrap();
+    let plan: serde_json::Value = serde_json::from_str(&plan_json).unwrap();
+    let beats = plan["beats"].as_array().unwrap();
+
+    assert_eq!(
+        beats.len(),
+        1,
+        "expected the three short beats to merge into one"
+    );
+    assert_eq!(beats[0]["category"], "main-scene");
+}
+
+#[test]
 fn render_without_plan_arg_fails() {
     let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
     cmd.arg("render");

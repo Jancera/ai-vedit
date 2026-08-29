@@ -89,7 +89,7 @@ assets/
 ### `plan`
 
 ```
-ai-vedit plan --audio script.mp3 [--assets ./assets] [--aspect 16:9|9:16]
+ai-vedit plan --audio script.mp3 [--assets ./assets] [--aspect 16:9|9:16] [--min-beat-duration 5]
 ```
 
 - Transcribes the audio (transcript is cached to disk at

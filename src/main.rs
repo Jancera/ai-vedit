@@ -28,6 +28,11 @@ fn run_plan(args: PlanArgs) {
         std::process::exit(1);
     }
 
+    if args.min_beat_duration <= 0.0 {
+        eprintln!("error: --min-beat-duration must be greater than 0");
+        std::process::exit(1);
+    }
+
     let config = match Config::from_env() {
         Ok(config) => config,
         Err(e) => {
@@ -95,6 +100,7 @@ fn run_plan(args: PlanArgs) {
         &config.openai_api_key,
         &transcript,
         &existing_categories,
+        args.min_beat_duration,
     ) {
         Ok(plan) => plan,
         Err(e) => {
