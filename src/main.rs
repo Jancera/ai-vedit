@@ -75,6 +75,13 @@ fn run_plan(args: PlanArgs) {
         }
     };
 
+    if let Err(e) = library::ensure_assets_dir(&args.assets) {
+        eprintln!(
+            "warning: could not create assets directory {:?}: {e}",
+            args.assets
+        );
+    }
+
     let existing_categories = match library::discover_categories(&args.assets) {
         Ok(categories) => categories,
         Err(e) => {
@@ -96,6 +103,18 @@ fn run_plan(args: PlanArgs) {
         }
     };
 
+    let plan_categories: Vec<&str> = plan.beats.iter().map(|b| b.category.as_str()).collect();
+    let created_categories = match library::ensure_category_dirs(&args.assets, plan_categories) {
+        Ok(created) => created,
+        Err(e) => {
+            eprintln!(
+                "warning: could not create category directories under {:?}: {e}",
+                args.assets
+            );
+            Vec::new()
+        }
+    };
+
     let plan_file = PlanFile {
         audio_path: args.audio.clone(),
         aspect: args.aspect,
@@ -108,10 +127,15 @@ fn run_plan(args: PlanArgs) {
         std::process::exit(1);
     }
 
-    print_report(&plan_file, plan_path, &args.assets);
+    print_report(&plan_file, plan_path, &args.assets, &created_categories);
 }
 
-fn print_report(plan_file: &PlanFile, plan_path: &std::path::Path, assets_dir: &std::path::Path) {
+fn print_report(
+    plan_file: &PlanFile,
+    plan_path: &std::path::Path,
+    assets_dir: &std::path::Path,
+    created_categories: &[String],
+) {
     use std::collections::BTreeMap;
 
     let mut budgets: BTreeMap<String, (usize, f64)> = BTreeMap::new();
@@ -131,18 +155,9 @@ fn print_report(plan_file: &PlanFile, plan_path: &std::path::Path, assets_dir: &
         println!("  {category}: {count} {beat_word}, {seconds:.1}s");
     }
 
-    let new_categories: Vec<String> = plan_file
-        .beats
-        .iter()
-        .filter(|b| b.is_new_category)
-        .map(|b| assets::normalize_category(&b.category))
-        .collect::<std::collections::BTreeSet<_>>()
-        .into_iter()
-        .collect();
-
-    if !new_categories.is_empty() {
-        println!("categories to create before rendering:");
-        for category in new_categories {
+    if !created_categories.is_empty() {
+        println!("created category directories (add assets before rendering):");
+        for category in created_categories {
             println!("  {category}");
         }
     }

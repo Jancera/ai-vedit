@@ -256,7 +256,30 @@ fn plan_lists_new_categories_separately() {
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("drone-shots"))
-        .stdout(predicate::str::contains("create"));
+        .stdout(predicate::str::contains("created category directories"));
+
+    assert!(dir.path().join("assets").join("drone-shots").is_dir());
+}
+
+#[test]
+fn plan_creates_missing_assets_and_category_directories() {
+    let dir = tempfile::tempdir().unwrap();
+    let audio_path = write_fixture_audio(dir.path());
+    let mut server = mockito::Server::new();
+    let _mock = mock_successful_transcription(&mut server);
+    let _plan_mock = mock_successful_plan(&mut server);
+
+    assert!(!dir.path().join("assets").exists());
+
+    let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
+    cmd.current_dir(dir.path());
+    cmd.args(["plan", "--audio", audio_path.to_str().unwrap()]);
+    cmd.env("OPENAI_API_KEY", "test-key");
+    cmd.env("AI_VEDIT_OPENAI_BASE_URL", server.url());
+    cmd.assert().success();
+
+    assert!(dir.path().join("assets").is_dir());
+    assert!(dir.path().join("assets").join("general").is_dir());
 }
 
 #[test]
