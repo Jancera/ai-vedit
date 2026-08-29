@@ -266,14 +266,23 @@ fn relayout_beats(beats: &mut [Beat]) {
     }
 }
 
-/// Merges short beats, then (when `total_duration` is known) proportionally
-/// rescales every beat's duration so the beats' combined length matches it
-/// exactly, then relays out `start`/`end` as a gap-free timeline. When
+/// When `total_duration` is known, proportionally rescales every beat's
+/// duration so the beats' combined length matches it exactly, then merges
+/// short beats, then relays out `start`/`end` as a gap-free timeline. When
 /// `total_duration` is `<= 0.0` (unknown — e.g. a transcript cached before
 /// `Transcript.duration` existed), the rescale step is skipped and only the
 /// merge + relayout apply.
+///
+/// Rescaling happens *before* merging (not after) so that
+/// `min_beat_duration` means real seconds in both the stretch and shrink
+/// direction: the merge threshold is compared against durations that are
+/// already scaled to the real audio length, not the model's raw declared
+/// durations. This also eliminates a previously-accepted edge case where a
+/// merged beat's duration could get pushed back under the minimum by a
+/// later shrink-rescale — merging now always operates on already
+/// real-second-scaled durations, so that can't happen.
 fn normalize_plan(beats: Vec<Beat>, min_beat_duration: f64, total_duration: f64) -> Vec<Beat> {
-    let mut beats = merge_short_beats(beats, min_beat_duration);
+    let mut beats = beats;
 
     if total_duration > 0.0 {
         let current_total: f64 = beats.iter().map(|b| b.duration).sum();
@@ -285,6 +294,7 @@ fn normalize_plan(beats: Vec<Beat>, min_beat_duration: f64, total_duration: f64)
         }
     }
 
+    let mut beats = merge_short_beats(beats, min_beat_duration);
     relayout_beats(&mut beats);
 
     beats
@@ -434,7 +444,7 @@ mod tests {
     }
 
     #[test]
-    fn normalize_plan_composes_merge_and_rescale() {
+    fn normalize_plan_rescales_before_merging_so_the_minimum_applies_to_real_seconds() {
         let beats = vec![
             beat_with_duration(1.0, "a"),
             beat_with_duration(1.0, "b"),
@@ -443,10 +453,14 @@ mod tests {
 
         let normalized = normalize_plan(beats, 3.0, 8.0);
 
-        assert_eq!(normalized.len(), 1);
-        assert_eq!(normalized[0].duration, 8.0);
+        assert_eq!(normalized.len(), 2);
+        assert_eq!(normalized[0].duration, 4.0);
         assert_eq!(normalized[0].start, 0.0);
-        assert_eq!(normalized[0].end, 8.0);
+        assert_eq!(normalized[0].end, 4.0);
+        assert_eq!(normalized[1].duration, 4.0);
+        assert_eq!(normalized[1].category, "c");
+        assert_eq!(normalized[1].start, 4.0);
+        assert_eq!(normalized[1].end, 8.0);
     }
 
     #[test]
