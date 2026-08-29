@@ -59,6 +59,7 @@ mod tests {
             beats: vec![Beat {
                 start: 0.0,
                 end: 3.0,
+                duration: 3.0,
                 description: "City at night".to_string(),
                 category: "city-broll".to_string(),
                 is_new_category: false,

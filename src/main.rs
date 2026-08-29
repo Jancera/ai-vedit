@@ -120,7 +120,7 @@ fn print_report(plan_file: &PlanFile, plan_path: &std::path::Path, assets_dir: &
             .entry(assets::normalize_category(&beat.category))
             .or_insert((0, 0.0));
         entry.0 += 1;
-        entry.1 += beat.end - beat.start;
+        entry.1 += beat.duration;
     }
 
     println!("plan: wrote {:?}", plan_path);
@@ -194,7 +194,7 @@ fn run_render(args: RenderArgs) {
 
     for (i, beat) in plan_file.beats.iter().enumerate() {
         let beat_num = i + 1;
-        let duration = beat.end - beat.start;
+        let duration = beat.duration;
         if duration <= 0.0 {
             eprintln!("error: beat {beat_num} has a non-positive duration ({duration:.3}s)");
             std::process::exit(1);

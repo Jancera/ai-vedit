@@ -10,6 +10,12 @@ const MODEL: &str = "gpt-4o-mini";
 pub struct Beat {
     pub start: f64,
     pub end: f64,
+    /// Derived as `end - start`, not requested from the model. Populated by
+    /// `plan_beats` after parsing; defaults to 0.0 so a beat freshly
+    /// deserialized from the model's response (which never includes this
+    /// field) doesn't fail to parse before that happens.
+    #[serde(default)]
+    pub duration: f64,
     pub description: String,
     pub category: String,
     pub is_new_category: bool,
@@ -113,10 +119,14 @@ pub fn plan_beats(
         .map(|c| c.message.content.as_str())
         .ok_or(PlannerError::EmptyResponse)?;
 
-    let plan = serde_json::from_str::<Plan>(content).map_err(PlannerError::Json)?;
+    let mut plan = serde_json::from_str::<Plan>(content).map_err(PlannerError::Json)?;
 
     if plan.beats.is_empty() {
         return Err(PlannerError::EmptyResponse);
+    }
+
+    for beat in &mut plan.beats {
+        beat.duration = beat.end - beat.start;
     }
 
     Ok(plan)
@@ -128,9 +138,19 @@ fn build_request_body(
 ) -> serde_json::Value {
     let system_prompt = "You segment narration transcripts into short narrative beats for a \
         video editor. For each beat, provide a start/end time (seconds, matching the supplied \
-        transcript segment timestamps), a short description, and an asset category. Prefer one \
-        of the existing categories when it fits; otherwise propose a new, short, kebab-case \
-        category name and set is_new_category to true.";
+        transcript segment timestamps), a short description, and an asset category. \
+        \n\nFor each beat, identify the distinct visual subject implied by that beat's content \
+        (e.g. a specific place, object, action, or concept) and choose a short, kebab-case \
+        category name that names that subject. Beats about different subjects should usually \
+        get different categories \u{2014} do not default every beat to the same category. \
+        \n\nexisting_categories lists category names already in use; reuse one only when it is \
+        a genuine match for the beat's subject, not merely because it already exists \u{2014} \
+        it is there to help you avoid creating a near-duplicate of a category that already \
+        covers the same subject, not to limit your choices. When no existing category is a \
+        good match, propose a new one and set is_new_category to true. \
+        \n\nAvoid generic categories like \"general\" or \"narration\": only use a generic \
+        category for a beat that truly has no distinct visual subject (e.g. a pure transition \
+        or a beat that is just restating something already covered by a nearby beat).";
 
     let user_content = serde_json::json!({
         "transcript_text": transcript.text,
@@ -211,6 +231,18 @@ mod tests {
     }
 
     #[test]
+    fn build_request_body_discourages_generic_catch_all_categories() {
+        let transcript = sample_transcript();
+        let categories = vec!["general".to_string()];
+
+        let body = build_request_body(&transcript, &categories);
+        let system_prompt = body["messages"][0]["content"].as_str().unwrap();
+
+        assert!(system_prompt.contains("Avoid generic categories"));
+        assert!(system_prompt.contains("not merely because it already exists"));
+    }
+
+    #[test]
     fn plan_beats_parses_successful_response() {
         let mut server = mockito::Server::new();
         let _mock = server
@@ -228,8 +260,10 @@ mod tests {
 
         assert_eq!(plan.beats.len(), 2);
         assert_eq!(plan.beats[0].category, "city-broll");
+        assert_eq!(plan.beats[0].duration, 3.0);
         assert!(!plan.beats[0].is_new_category);
         assert_eq!(plan.beats[1].category, "product-shots");
+        assert_eq!(plan.beats[1].duration, 3.0);
         assert!(plan.beats[1].is_new_category);
     }
 
