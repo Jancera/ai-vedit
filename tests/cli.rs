@@ -444,3 +444,53 @@ fn render_fails_cleanly_without_api_key_when_plan_file_is_missing() {
         .stderr(predicate::str::contains("failed to load plan file"))
         .stderr(predicate::str::contains("OPENAI_API_KEY").not());
 }
+
+#[test]
+fn plan_rescales_beats_to_match_the_audio_duration() {
+    let dir = tempfile::tempdir().unwrap();
+    let audio_path = write_fixture_audio(dir.path());
+    let mut server = mockito::Server::new();
+
+    let _transcription_mock = server
+        .mock("POST", "/v1/audio/transcriptions")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(
+            r#"{"text":"hi","segments":[{"start":0.0,"end":2.0,"text":"hi"}],"duration":10.0}"#,
+        )
+        .create();
+    let _plan_mock = mock_successful_plan(&mut server);
+
+    let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
+    cmd.current_dir(dir.path());
+    cmd.args(["plan", "--audio", audio_path.to_str().unwrap()]);
+    cmd.env("OPENAI_API_KEY", "test-key");
+    cmd.env("AI_VEDIT_OPENAI_BASE_URL", server.url());
+    cmd.assert().success();
+
+    let plan_json = std::fs::read_to_string(dir.path().join("plan.json")).unwrap();
+    let plan: serde_json::Value = serde_json::from_str(&plan_json).unwrap();
+    let beats = plan["beats"].as_array().unwrap();
+
+    assert_eq!(beats.len(), 1);
+    assert_eq!(beats[0]["duration"], 10.0);
+    assert_eq!(beats[0]["end"], 10.0);
+}
+
+#[test]
+fn plan_warns_when_transcript_duration_is_unknown() {
+    let dir = tempfile::tempdir().unwrap();
+    let audio_path = write_fixture_audio(dir.path());
+    let mut server = mockito::Server::new();
+    let _mock = mock_successful_transcription(&mut server);
+    let _plan_mock = mock_successful_plan(&mut server);
+
+    let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
+    cmd.current_dir(dir.path());
+    cmd.args(["plan", "--audio", audio_path.to_str().unwrap()]);
+    cmd.env("OPENAI_API_KEY", "test-key");
+    cmd.env("AI_VEDIT_OPENAI_BASE_URL", server.url());
+    cmd.assert().success().stderr(predicate::str::contains(
+        "warning: transcript has no known duration",
+    ));
+}

@@ -130,7 +130,7 @@ pub fn plan_beats(
         beat.duration = beat.end - beat.start;
     }
 
-    plan.beats = merge_short_beats(plan.beats, min_beat_duration);
+    plan.beats = normalize_plan(plan.beats, min_beat_duration, transcript.duration);
 
     Ok(plan)
 }
@@ -254,6 +254,42 @@ fn merge_short_beats(beats: Vec<Beat>, min_duration: f64) -> Vec<Beat> {
     groups.into_iter().map(collapse_group).collect()
 }
 
+/// Lays `start`/`end` out as one contiguous timeline starting at 0, purely
+/// from each beat's `duration` — the model's own start/end values are
+/// never trusted for this, only relative durations are.
+fn relayout_beats(beats: &mut [Beat]) {
+    let mut cursor = 0.0;
+    for beat in beats.iter_mut() {
+        beat.start = cursor;
+        beat.end = cursor + beat.duration;
+        cursor = beat.end;
+    }
+}
+
+/// Merges short beats, then (when `total_duration` is known) proportionally
+/// rescales every beat's duration so the beats' combined length matches it
+/// exactly, then relays out `start`/`end` as a gap-free timeline. When
+/// `total_duration` is `<= 0.0` (unknown — e.g. a transcript cached before
+/// `Transcript.duration` existed), the rescale step is skipped and only the
+/// merge + relayout apply.
+fn normalize_plan(beats: Vec<Beat>, min_beat_duration: f64, total_duration: f64) -> Vec<Beat> {
+    let mut beats = merge_short_beats(beats, min_beat_duration);
+
+    if total_duration > 0.0 {
+        let current_total: f64 = beats.iter().map(|b| b.duration).sum();
+        if current_total > 0.0 {
+            let scale = total_duration / current_total;
+            for beat in &mut beats {
+                beat.duration *= scale;
+            }
+        }
+    }
+
+    relayout_beats(&mut beats);
+
+    beats
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -353,6 +389,64 @@ mod tests {
         let merged = merge_short_beats(beats, 0.0);
 
         assert_eq!(merged.len(), 2);
+    }
+
+    #[test]
+    fn normalize_plan_rescales_beats_to_match_a_longer_total_duration() {
+        let beats = vec![beat_with_duration(2.0, "a"), beat_with_duration(2.0, "b")];
+
+        let normalized = normalize_plan(beats, 0.0, 8.0);
+
+        assert_eq!(normalized[0].duration, 4.0);
+        assert_eq!(normalized[1].duration, 4.0);
+    }
+
+    #[test]
+    fn normalize_plan_rescales_beats_to_match_a_shorter_total_duration() {
+        let beats = vec![beat_with_duration(4.0, "a"), beat_with_duration(4.0, "b")];
+
+        let normalized = normalize_plan(beats, 0.0, 4.0);
+
+        assert_eq!(normalized[0].duration, 2.0);
+        assert_eq!(normalized[1].duration, 2.0);
+    }
+
+    #[test]
+    fn normalize_plan_skips_rescale_when_total_duration_is_unknown() {
+        let beats = vec![beat_with_duration(2.0, "a"), beat_with_duration(2.0, "b")];
+
+        let normalized = normalize_plan(beats, 0.0, 0.0);
+
+        assert_eq!(normalized[0].duration, 2.0);
+        assert_eq!(normalized[1].duration, 2.0);
+    }
+
+    #[test]
+    fn normalize_plan_produces_contiguous_start_and_end_with_no_gaps() {
+        let beats = vec![beat_with_duration(2.0, "a"), beat_with_duration(3.0, "b")];
+
+        let normalized = normalize_plan(beats, 0.0, 0.0);
+
+        assert_eq!(normalized[0].start, 0.0);
+        assert_eq!(normalized[0].end, 2.0);
+        assert_eq!(normalized[1].start, 2.0);
+        assert_eq!(normalized[1].end, 5.0);
+    }
+
+    #[test]
+    fn normalize_plan_composes_merge_and_rescale() {
+        let beats = vec![
+            beat_with_duration(1.0, "a"),
+            beat_with_duration(1.0, "b"),
+            beat_with_duration(2.0, "c"),
+        ];
+
+        let normalized = normalize_plan(beats, 3.0, 8.0);
+
+        assert_eq!(normalized.len(), 1);
+        assert_eq!(normalized[0].duration, 8.0);
+        assert_eq!(normalized[0].start, 0.0);
+        assert_eq!(normalized[0].end, 8.0);
     }
 
     #[test]

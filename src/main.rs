@@ -80,6 +80,13 @@ fn run_plan(args: PlanArgs) {
         }
     };
 
+    if transcript.duration <= 0.0 {
+        eprintln!(
+            "warning: transcript has no known duration (stale cache?); beat timing won't be \
+             rescaled to match the audio length"
+        );
+    }
+
     if let Err(e) = library::ensure_assets_dir(&args.assets) {
         eprintln!(
             "warning: could not create assets directory {:?}: {e}",
