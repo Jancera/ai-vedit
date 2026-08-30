@@ -13,6 +13,19 @@ pub fn resolution_for(aspect: AspectRatio) -> (u32, u32) {
     }
 }
 
+/// Fits an asset into a `width`x`height` frame without ever scaling it:
+/// crops the excess, centered, off any dimension where the asset is
+/// bigger than the frame, then pads with black, centered, up to any
+/// dimension where it's smaller. An asset that's smaller in both
+/// dimensions ends up centered on a black canvas at its native size; one
+/// that's bigger in both gets a centered crop; a mismatched asset gets
+/// both.
+fn fit_filter(width: u32, height: u32) -> String {
+    format!(
+        "crop=min(iw\\,{width}):min(ih\\,{height}),pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black"
+    )
+}
+
 pub fn ken_burns_command(
     image_path: &Path,
     duration: f64,
@@ -21,8 +34,13 @@ pub fn ken_burns_command(
 ) -> Vec<String> {
     let (width, height) = resolution;
     let frames = (duration * FPS as f64).round() as u64;
+    // Last output frame index (0-based); guards against a degenerate
+    // 0- or 1-frame beat so the division below never sees a zero
+    // denominator.
+    let last_frame = frames.saturating_sub(1).max(1);
+    let fit = fit_filter(width, height);
     let zoompan = format!(
-        "zoompan=z='min(zoom+0.0015,1.15)':d={frames}:s={width}x{height}:fps={FPS}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+        "{fit},zoompan=z='1+0.15*on/{last_frame}':d={frames}:s={width}x{height}:fps={FPS}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
     );
 
     vec![
@@ -51,9 +69,7 @@ pub fn video_clip_command(
     output_path: &Path,
 ) -> Vec<String> {
     let (width, height) = resolution;
-    let scale_pad = format!(
-        "scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2"
-    );
+    let fit = fit_filter(width, height);
 
     vec![
         "-hide_banner".to_string(),
@@ -65,7 +81,7 @@ pub fn video_clip_command(
         "-t".to_string(),
         format!("{duration:.3}"),
         "-vf".to_string(),
-        scale_pad,
+        fit,
         "-an".to_string(),
         "-r".to_string(),
         FPS.to_string(),
@@ -198,7 +214,7 @@ mod tests {
                 "-t".to_string(),
                 "2.000".to_string(),
                 "-vf".to_string(),
-                "zoompan=z='min(zoom+0.0015,1.15)':d=120:s=1920x1080:fps=60:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+                "crop=min(iw\\,1920):min(ih\\,1080),pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black,zoompan=z='1+0.15*on/119':d=120:s=1920x1080:fps=60:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
                     .to_string(),
                 "-r".to_string(),
                 "60".to_string(),
@@ -230,7 +246,7 @@ mod tests {
                 "-t".to_string(),
                 "3.500".to_string(),
                 "-vf".to_string(),
-                "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2"
+                "crop=min(iw\\,1080):min(ih\\,1920),pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black"
                     .to_string(),
                 "-an".to_string(),
                 "-r".to_string(),

@@ -28,6 +28,11 @@ fn run_plan(args: PlanArgs) {
         std::process::exit(1);
     }
 
+    if args.min_beat_duration <= 0.0 {
+        eprintln!("error: --min-beat-duration must be greater than 0");
+        std::process::exit(1);
+    }
+
     let config = match Config::from_env() {
         Ok(config) => config,
         Err(e) => {
@@ -75,6 +80,20 @@ fn run_plan(args: PlanArgs) {
         }
     };
 
+    if transcript.duration <= 0.0 {
+        eprintln!(
+            "warning: transcript has no known duration (stale cache?); beat timing won't be \
+             rescaled to match the audio length"
+        );
+    }
+
+    if let Err(e) = library::ensure_assets_dir(&args.assets) {
+        eprintln!(
+            "warning: could not create assets directory {:?}: {e}",
+            args.assets
+        );
+    }
+
     let existing_categories = match library::discover_categories(&args.assets) {
         Ok(categories) => categories,
         Err(e) => {
@@ -88,11 +107,24 @@ fn run_plan(args: PlanArgs) {
         &config.openai_api_key,
         &transcript,
         &existing_categories,
+        args.min_beat_duration,
     ) {
         Ok(plan) => plan,
         Err(e) => {
             eprintln!("error: planning failed: {e}");
             std::process::exit(1);
+        }
+    };
+
+    let plan_categories: Vec<&str> = plan.beats.iter().map(|b| b.category.as_str()).collect();
+    let created_categories = match library::ensure_category_dirs(&args.assets, plan_categories) {
+        Ok(created) => created,
+        Err(e) => {
+            eprintln!(
+                "warning: could not create category directories under {:?}: {e}",
+                args.assets
+            );
+            Vec::new()
         }
     };
 
@@ -108,10 +140,15 @@ fn run_plan(args: PlanArgs) {
         std::process::exit(1);
     }
 
-    print_report(&plan_file, plan_path, &args.assets);
+    print_report(&plan_file, plan_path, &args.assets, &created_categories);
 }
 
-fn print_report(plan_file: &PlanFile, plan_path: &std::path::Path, assets_dir: &std::path::Path) {
+fn print_report(
+    plan_file: &PlanFile,
+    plan_path: &std::path::Path,
+    assets_dir: &std::path::Path,
+    created_categories: &[String],
+) {
     use std::collections::BTreeMap;
 
     let mut budgets: BTreeMap<String, (usize, f64)> = BTreeMap::new();
@@ -120,7 +157,7 @@ fn print_report(plan_file: &PlanFile, plan_path: &std::path::Path, assets_dir: &
             .entry(assets::normalize_category(&beat.category))
             .or_insert((0, 0.0));
         entry.0 += 1;
-        entry.1 += beat.end - beat.start;
+        entry.1 += beat.duration;
     }
 
     println!("plan: wrote {:?}", plan_path);
@@ -131,18 +168,9 @@ fn print_report(plan_file: &PlanFile, plan_path: &std::path::Path, assets_dir: &
         println!("  {category}: {count} {beat_word}, {seconds:.1}s");
     }
 
-    let new_categories: Vec<String> = plan_file
-        .beats
-        .iter()
-        .filter(|b| b.is_new_category)
-        .map(|b| assets::normalize_category(&b.category))
-        .collect::<std::collections::BTreeSet<_>>()
-        .into_iter()
-        .collect();
-
-    if !new_categories.is_empty() {
-        println!("categories to create before rendering:");
-        for category in new_categories {
+    if !created_categories.is_empty() {
+        println!("created category directories (add assets before rendering):");
+        for category in created_categories {
             println!("  {category}");
         }
     }
@@ -194,7 +222,7 @@ fn run_render(args: RenderArgs) {
 
     for (i, beat) in plan_file.beats.iter().enumerate() {
         let beat_num = i + 1;
-        let duration = beat.end - beat.start;
+        let duration = beat.duration;
         if duration <= 0.0 {
             eprintln!("error: beat {beat_num} has a non-positive duration ({duration:.3}s)");
             std::process::exit(1);

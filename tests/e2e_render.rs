@@ -129,7 +129,13 @@ fn full_pipeline_produces_playable_video() {
 
     let mut plan_cmd = Command::cargo_bin("ai-vedit").unwrap();
     plan_cmd.current_dir(dir.path());
-    plan_cmd.args(["plan", "--audio", audio_path.to_str().unwrap()]);
+    plan_cmd.args([
+        "plan",
+        "--audio",
+        audio_path.to_str().unwrap(),
+        "--min-beat-duration",
+        "1",
+    ]);
     plan_cmd.env("OPENAI_API_KEY", "test-key");
     plan_cmd.env("AI_VEDIT_OPENAI_BASE_URL", server.url());
     plan_cmd.assert().success();

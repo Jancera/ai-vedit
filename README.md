@@ -39,8 +39,10 @@ Prerequisites:
 export OPENAI_API_KEY=sk-...
 
 mkdir -p assets/general
-# add a few images/videos to assets/general/, or create category folders
-# like assets/city-broll/ ahead of time if you already know your beats
+# `ai-vedit plan` creates assets/ and a folder per planned category
+# automatically if they don't exist yet -- add images/videos to
+# assets/general/, or drop them into the category folders it created
+# for you, before running `ai-vedit render`
 
 ai-vedit plan --audio script.mp3
 # writes plan.json, prints a time-budget report, and lists any new
@@ -87,7 +89,7 @@ assets/
 ### `plan`
 
 ```
-ai-vedit plan --audio script.mp3 [--assets ./assets] [--aspect 16:9|9:16]
+ai-vedit plan --audio script.mp3 [--assets ./assets] [--aspect 16:9|9:16] [--min-beat-duration 5]
 ```
 
 - Transcribes the audio (transcript is cached to disk at
