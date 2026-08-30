@@ -250,13 +250,22 @@ fn run_render(args: RenderArgs) {
         let clip_filename = format!("beat-{beat_num:03}.mp4");
         let clip_path = tmp_dir.join(&clip_filename);
 
+        let asset_dimensions = render::probe_dimensions(&selection.asset.path);
         let ffmpeg_args = match selection.asset.kind {
-            assets::AssetKind::Image => {
-                render::ken_burns_command(&selection.asset.path, duration, resolution, &clip_path)
-            }
-            assets::AssetKind::Video => {
-                render::video_clip_command(&selection.asset.path, duration, resolution, &clip_path)
-            }
+            assets::AssetKind::Image => render::ken_burns_command(
+                &selection.asset.path,
+                duration,
+                resolution,
+                asset_dimensions,
+                &clip_path,
+            ),
+            assets::AssetKind::Video => render::video_clip_command(
+                &selection.asset.path,
+                duration,
+                resolution,
+                asset_dimensions,
+                &clip_path,
+            ),
         };
 
         if let Err(e) = render::run_ffmpeg(&ffmpeg_args) {

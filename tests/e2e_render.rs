@@ -72,6 +72,52 @@ fn generate_fixture_video(path: &Path) {
     assert!(status.success(), "ffmpeg failed to generate fixture video");
 }
 
+fn generate_oversized_image(path: &Path, size: &str) {
+    let status = std::process::Command::new("ffmpeg")
+        .args(["-y", "-f", "lavfi", "-i"])
+        .arg(format!("testsrc=s={size}:d=1"))
+        .args(["-frames:v", "1"])
+        .arg(path)
+        .status()
+        .expect("failed to run ffmpeg to generate oversized fixture image");
+    assert!(
+        status.success(),
+        "ffmpeg failed to generate oversized image"
+    );
+}
+
+fn generate_oversized_video(path: &Path, size: &str) {
+    let status = std::process::Command::new("ffmpeg")
+        .args(["-y", "-f", "lavfi", "-i"])
+        .arg(format!("testsrc=s={size}:d=2"))
+        .args(["-t", "2", "-pix_fmt", "yuv420p"])
+        .arg(path)
+        .status()
+        .expect("failed to run ffmpeg to generate oversized fixture video");
+    assert!(
+        status.success(),
+        "ffmpeg failed to generate oversized video"
+    );
+}
+
+fn video_dimensions(path: &Path) -> String {
+    let output = std::process::Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=width,height",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(path)
+        .output()
+        .expect("failed to run ffprobe on output video");
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
 fn mock_successful_transcription(server: &mut mockito::Server) -> mockito::Mock {
     server
         .mock("POST", "/v1/audio/transcriptions")
@@ -179,5 +225,68 @@ fn full_pipeline_produces_playable_video() {
     assert!(
         stream_types.contains("audio"),
         "expected output to have an audio stream, ffprobe reported: {stream_types}"
+    );
+}
+
+#[test]
+#[ignore]
+fn oversized_same_aspect_assets_render_at_output_resolution() {
+    if !ffmpeg_available() {
+        panic!(
+            "ffmpeg not found on PATH — this test requires it; only run with \
+             `cargo test -- --ignored` when ffmpeg is installed"
+        );
+    }
+    if !ffprobe_available() {
+        panic!("ffprobe not found on PATH — this test requires it (normally bundled with ffmpeg)");
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+
+    let audio_path = dir.path().join("script.mp3");
+    generate_fixture_audio(&audio_path);
+
+    let stills_dir = dir.path().join("assets").join("stills");
+    let clips_dir = dir.path().join("assets").join("clips");
+    std::fs::create_dir_all(&stills_dir).unwrap();
+    std::fs::create_dir_all(&clips_dir).unwrap();
+    // Both assets share the 16:9 output aspect and exceed 1920x1080, so
+    // the renderer probes their size and scales them down to fit.
+    generate_oversized_image(&stills_dir.join("photo.jpg"), "3840x2160");
+    generate_oversized_video(&clips_dir.join("clip.mp4"), "2560x1440");
+
+    let mut server = mockito::Server::new();
+    let _transcription_mock = mock_successful_transcription(&mut server);
+    let _plan_mock = mock_successful_plan(&mut server);
+
+    let mut plan_cmd = Command::cargo_bin("ai-vedit").unwrap();
+    plan_cmd.current_dir(dir.path());
+    plan_cmd.args([
+        "plan",
+        "--audio",
+        audio_path.to_str().unwrap(),
+        "--min-beat-duration",
+        "1",
+    ]);
+    plan_cmd.env("OPENAI_API_KEY", "test-key");
+    plan_cmd.env("AI_VEDIT_OPENAI_BASE_URL", server.url());
+    plan_cmd.assert().success();
+
+    let output_path = dir.path().join("final.mp4");
+    let mut render_cmd = Command::cargo_bin("ai-vedit").unwrap();
+    render_cmd.current_dir(dir.path());
+    render_cmd.args([
+        "render",
+        "--plan",
+        "plan.json",
+        "--out",
+        output_path.to_str().unwrap(),
+    ]);
+    render_cmd.assert().success();
+
+    assert_eq!(
+        video_dimensions(&output_path),
+        "1920,1080",
+        "expected the scaled-down assets to render at the 16:9 output resolution"
     );
 }

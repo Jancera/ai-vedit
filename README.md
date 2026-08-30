@@ -112,6 +112,11 @@ ai-vedit render --plan plan.json [--assets ./assets] [--out output.mp4] [--aspec
   category has no assets, and erroring out at that beat if `general/` is also empty.
   - Images: held for the beat's duration with a Ken Burns (slow zoom/pan) effect.
   - Videos: trimmed to fit if longer than the beat, looped if shorter.
+- Fitting an asset to the frame:
+  - An asset larger than the output in both dimensions whose aspect ratio is within
+    1% of the output's is scaled down to the output resolution (no cropping).
+  - Otherwise the asset is placed at its native size — excess cropped from the
+    center, any shortfall padded with black.
 - Concatenates all beat clips, overlays the original narration audio, and encodes to
   the target resolution.
 
