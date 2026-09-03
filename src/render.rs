@@ -6,6 +6,18 @@ use crate::cli::AspectRatio;
 
 pub const FPS: u32 = 60;
 
+/// How far an asset's aspect ratio may drift from the output's and still
+/// be scaled down to fit (rather than cropped/padded at native size).
+const ASPECT_TOLERANCE: f64 = 0.01;
+
+/// Factor by which the framed image is upscaled before `zoompan` in the
+/// Ken Burns pass. `zoompan` quantizes its crop window to whole source
+/// pixels every frame, so a slow zoom snaps by 1px intermittently and
+/// shimmers; upscaling first shrinks that step by this factor, then
+/// `zoompan`'s `s=` downscales back to the output. Costs a `4*width` x
+/// `4*height` intermediate frame (7680x4320 for 1080p); images only.
+const KEN_BURNS_UPSCALE: u32 = 4;
+
 pub fn resolution_for(aspect: AspectRatio) -> (u32, u32) {
     match aspect {
         AspectRatio::Sixteen9 => (1920, 1080),
@@ -13,23 +25,45 @@ pub fn resolution_for(aspect: AspectRatio) -> (u32, u32) {
     }
 }
 
-/// Fits an asset into a `width`x`height` frame without ever scaling it:
-/// crops the excess, centered, off any dimension where the asset is
-/// bigger than the frame, then pads with black, centered, up to any
-/// dimension where it's smaller. An asset that's smaller in both
-/// dimensions ends up centered on a black canvas at its native size; one
-/// that's bigger in both gets a centered crop; a mismatched asset gets
-/// both.
-fn fit_filter(width: u32, height: u32) -> String {
+/// Fits an asset into a `width`x`height` frame.
+///
+/// When `asset` dimensions are known and the asset is larger than the
+/// frame in both dimensions with an aspect ratio within [`ASPECT_TOLERANCE`]
+/// of it, the asset is scaled down to the frame (the sub-1% overflow from
+/// the tolerance is cropped from the center).
+///
+/// Otherwise the asset is never scaled: the excess is cropped, centered,
+/// off any dimension where the asset is bigger than the frame, then padded
+/// with black, centered, up to any dimension where it's smaller. An asset
+/// smaller in both dimensions ends up centered on a black canvas at its
+/// native size; one bigger in both gets a centered crop; a mismatched
+/// asset gets both.
+fn fit_filter(width: u32, height: u32, asset: Option<(u32, u32)>) -> String {
+    if let Some((aw, ah)) = asset {
+        if aw > width && ah > height && aspect_matches(width, height, aw, ah) {
+            return format!(
+                "scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}:(iw-ow)/2:(ih-oh)/2"
+            );
+        }
+    }
     format!(
         "crop=min(iw\\,{width}):min(ih\\,{height}),pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black"
     )
+}
+
+/// Whether an `aw`x`ah` asset's aspect ratio is within `ASPECT_TOLERANCE`
+/// of a `width`x`height` frame.
+fn aspect_matches(width: u32, height: u32, aw: u32, ah: u32) -> bool {
+    let target = width as f64 / height as f64;
+    let actual = aw as f64 / ah as f64;
+    (actual / target - 1.0).abs() <= ASPECT_TOLERANCE
 }
 
 pub fn ken_burns_command(
     image_path: &Path,
     duration: f64,
     resolution: (u32, u32),
+    asset_dimensions: Option<(u32, u32)>,
     output_path: &Path,
 ) -> Vec<String> {
     let (width, height) = resolution;
@@ -38,9 +72,9 @@ pub fn ken_burns_command(
     // 0- or 1-frame beat so the division below never sees a zero
     // denominator.
     let last_frame = frames.saturating_sub(1).max(1);
-    let fit = fit_filter(width, height);
+    let fit = fit_filter(width, height, asset_dimensions);
     let zoompan = format!(
-        "{fit},zoompan=z='1+0.15*on/{last_frame}':d={frames}:s={width}x{height}:fps={FPS}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+        "{fit},scale=iw*{KEN_BURNS_UPSCALE}:ih*{KEN_BURNS_UPSCALE}:flags=lanczos,zoompan=z='1+0.15*on/{last_frame}':d={frames}:s={width}x{height}:fps={FPS}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
     );
 
     vec![
@@ -66,10 +100,11 @@ pub fn video_clip_command(
     video_path: &Path,
     duration: f64,
     resolution: (u32, u32),
+    asset_dimensions: Option<(u32, u32)>,
     output_path: &Path,
 ) -> Vec<String> {
     let (width, height) = resolution;
-    let fit = fit_filter(width, height);
+    let fit = fit_filter(width, height, asset_dimensions);
 
     vec![
         "-hide_banner".to_string(),
@@ -89,6 +124,49 @@ pub fn video_clip_command(
         "yuv420p".to_string(),
         output_path.to_string_lossy().to_string(),
     ]
+}
+
+/// ffprobe arguments that print an asset's first video stream dimensions
+/// as `width,height` on one line.
+pub fn probe_dimensions_command(path: &Path) -> Vec<String> {
+    vec![
+        "-v".to_string(),
+        "error".to_string(),
+        "-select_streams".to_string(),
+        "v:0".to_string(),
+        "-show_entries".to_string(),
+        "stream=width,height".to_string(),
+        "-of".to_string(),
+        "csv=p=0".to_string(),
+        path.to_string_lossy().to_string(),
+    ]
+}
+
+/// Parses `width,height` (as emitted by [`probe_dimensions_command`]) into
+/// a pixel pair. Returns `None` for any output that isn't two positive
+/// integers, so callers fall back to native-resolution crop/pad.
+fn parse_dimensions(stdout: &str) -> Option<(u32, u32)> {
+    let line = stdout.lines().next()?;
+    let (w, h) = line.trim().split_once(',')?;
+    let w: u32 = w.trim().parse().ok()?;
+    let h: u32 = h.trim().parse().ok()?;
+    if w == 0 || h == 0 {
+        return None;
+    }
+    Some((w, h))
+}
+
+/// Runs `ffprobe` to read an asset's pixel dimensions. Returns `None` if
+/// ffprobe is missing, fails, or emits output we can't parse.
+pub fn probe_dimensions(path: &Path) -> Option<(u32, u32)> {
+    let output = Command::new("ffprobe")
+        .args(probe_dimensions_command(path))
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    parse_dimensions(&String::from_utf8_lossy(&output.stdout))
 }
 
 pub fn concat_list_content(clip_paths: &[PathBuf]) -> String {
@@ -194,11 +272,85 @@ mod tests {
     }
 
     #[test]
+    fn probe_dimensions_command_builds_expected_args() {
+        let args = probe_dimensions_command(Path::new("photo.jpg"));
+
+        assert_eq!(
+            args,
+            vec![
+                "-v".to_string(),
+                "error".to_string(),
+                "-select_streams".to_string(),
+                "v:0".to_string(),
+                "-show_entries".to_string(),
+                "stream=width,height".to_string(),
+                "-of".to_string(),
+                "csv=p=0".to_string(),
+                "photo.jpg".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_dimensions_reads_width_and_height() {
+        assert_eq!(parse_dimensions("3840,2160\n"), Some((3840, 2160)));
+    }
+
+    #[test]
+    fn parse_dimensions_returns_none_for_unparseable_output() {
+        assert_eq!(parse_dimensions(""), None);
+        assert_eq!(parse_dimensions("N/A,N/A\n"), None);
+        assert_eq!(parse_dimensions("1920\n"), None);
+    }
+
+    #[test]
+    fn fit_filter_scales_down_oversized_same_aspect_asset() {
+        let filter = fit_filter(1920, 1080, Some((3840, 2160)));
+
+        assert_eq!(
+            filter,
+            "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080:(iw-ow)/2:(ih-oh)/2"
+        );
+    }
+
+    const CROP_PAD_1080: &str =
+        "crop=min(iw\\,1920):min(ih\\,1080),pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black";
+
+    #[test]
+    fn fit_filter_scales_down_asset_within_aspect_tolerance() {
+        // 3844x2160 is ~0.1% wider than 16:9 — still scaled, tiny overflow cropped.
+        let filter = fit_filter(1920, 1080, Some((3844, 2160)));
+
+        assert_eq!(
+            filter,
+            "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080:(iw-ow)/2:(ih-oh)/2"
+        );
+    }
+
+    #[test]
+    fn fit_filter_crops_and_pads_when_aspect_outside_tolerance() {
+        // Oversized but square: nowhere near 16:9.
+        assert_eq!(fit_filter(1920, 1080, Some((2160, 2160))), CROP_PAD_1080);
+    }
+
+    #[test]
+    fn fit_filter_crops_and_pads_when_asset_not_larger_than_output() {
+        // Same aspect, but only equal in size — no scaling headroom.
+        assert_eq!(fit_filter(1920, 1080, Some((1920, 1080))), CROP_PAD_1080);
+    }
+
+    #[test]
+    fn fit_filter_crops_and_pads_when_dimensions_unknown() {
+        assert_eq!(fit_filter(1920, 1080, None), CROP_PAD_1080);
+    }
+
+    #[test]
     fn ken_burns_command_builds_expected_args() {
         let args = ken_burns_command(
             Path::new("photo.jpg"),
             2.0,
             (1920, 1080),
+            None,
             Path::new("out.mp4"),
         );
 
@@ -214,7 +366,7 @@ mod tests {
                 "-t".to_string(),
                 "2.000".to_string(),
                 "-vf".to_string(),
-                "crop=min(iw\\,1920):min(ih\\,1080),pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black,zoompan=z='1+0.15*on/119':d=120:s=1920x1080:fps=60:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+                "crop=min(iw\\,1920):min(ih\\,1080),pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black,scale=iw*4:ih*4:flags=lanczos,zoompan=z='1+0.15*on/119':d=120:s=1920x1080:fps=60:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
                     .to_string(),
                 "-r".to_string(),
                 "60".to_string(),
@@ -226,11 +378,63 @@ mod tests {
     }
 
     #[test]
+    fn ken_burns_command_scales_down_oversized_same_aspect_image() {
+        let args = ken_burns_command(
+            Path::new("photo.jpg"),
+            2.0,
+            (1920, 1080),
+            Some((3840, 2160)),
+            Path::new("out.mp4"),
+        );
+
+        let vf = &args[args.iter().position(|a| a == "-vf").unwrap() + 1];
+        assert_eq!(
+            vf,
+            "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080:(iw-ow)/2:(ih-oh)/2,scale=iw*4:ih*4:flags=lanczos,zoompan=z='1+0.15*on/119':d=120:s=1920x1080:fps=60:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+        );
+    }
+
+    #[test]
+    fn ken_burns_command_upscales_before_zoompan() {
+        let args = ken_burns_command(
+            Path::new("photo.jpg"),
+            2.0,
+            (1920, 1080),
+            None,
+            Path::new("out.mp4"),
+        );
+
+        let vf = &args[args.iter().position(|a| a == "-vf").unwrap() + 1];
+        assert!(
+            vf.contains(",scale=iw*4:ih*4:flags=lanczos,zoompan="),
+            "expected a 4x lanczos upscale immediately before zoompan, got: {vf}"
+        );
+    }
+
+    #[test]
+    fn video_clip_command_scales_down_oversized_same_aspect_video() {
+        let args = video_clip_command(
+            Path::new("clip.mp4"),
+            3.5,
+            (1920, 1080),
+            Some((2560, 1440)),
+            Path::new("out.mp4"),
+        );
+
+        let vf = &args[args.iter().position(|a| a == "-vf").unwrap() + 1];
+        assert_eq!(
+            vf,
+            "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080:(iw-ow)/2:(ih-oh)/2"
+        );
+    }
+
+    #[test]
     fn video_clip_command_builds_expected_args() {
         let args = video_clip_command(
             Path::new("clip.mp4"),
             3.5,
             (1080, 1920),
+            None,
             Path::new("out.mp4"),
         );
 

@@ -3,13 +3,11 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::cli::AspectRatio;
 use crate::planner::Beat;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PlanFile {
     pub audio_path: PathBuf,
-    pub aspect: AspectRatio,
     pub beats: Vec<Beat>,
 }
 
@@ -49,13 +47,11 @@ pub fn load(path: &Path) -> Result<PlanFile, PlanFileError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::AspectRatio;
     use crate::planner::Beat;
 
     fn sample_plan_file() -> PlanFile {
         PlanFile {
             audio_path: "script.mp3".into(),
-            aspect: AspectRatio::Sixteen9,
             beats: vec![Beat {
                 start: 0.0,
                 end: 3.0,
@@ -77,6 +73,31 @@ mod tests {
         let loaded = load(&path).expect("expected plan file to load");
 
         assert_eq!(loaded, plan_file);
+    }
+
+    #[test]
+    fn load_accepts_plan_without_aspect_field() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("plan.json");
+        std::fs::write(&path, r#"{"audio_path":"script.mp3","beats":[]}"#).unwrap();
+
+        let loaded = load(&path).expect("a plan without an aspect field should load");
+
+        assert_eq!(loaded.audio_path, PathBuf::from("script.mp3"));
+        assert!(loaded.beats.is_empty());
+    }
+
+    #[test]
+    fn load_ignores_legacy_aspect_field() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("plan.json");
+        std::fs::write(
+            &path,
+            r#"{"audio_path":"script.mp3","aspect":"Sixteen9","beats":[]}"#,
+        )
+        .unwrap();
+
+        load(&path).expect("a legacy plan carrying an aspect field should still load");
     }
 
     #[test]

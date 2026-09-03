@@ -130,7 +130,6 @@ fn run_plan(args: PlanArgs) {
 
     let plan_file = PlanFile {
         audio_path: args.audio.clone(),
-        aspect: args.aspect,
         beats: plan.beats,
     };
 
@@ -206,13 +205,7 @@ fn run_render(args: RenderArgs) {
         std::process::exit(1);
     }
 
-    if args.aspect != plan_file.aspect {
-        eprintln!(
-            "warning: --aspect {:?} differs from the plan's aspect {:?}; using the plan's aspect",
-            args.aspect, plan_file.aspect
-        );
-    }
-    let resolution = render::resolution_for(plan_file.aspect);
+    let resolution = render::resolution_for(args.aspect);
     let total = plan_file.beats.len();
     if plan_file.beats.is_empty() {
         eprintln!("error: plan has no beats to render");
@@ -250,13 +243,22 @@ fn run_render(args: RenderArgs) {
         let clip_filename = format!("beat-{beat_num:03}.mp4");
         let clip_path = tmp_dir.join(&clip_filename);
 
+        let asset_dimensions = render::probe_dimensions(&selection.asset.path);
         let ffmpeg_args = match selection.asset.kind {
-            assets::AssetKind::Image => {
-                render::ken_burns_command(&selection.asset.path, duration, resolution, &clip_path)
-            }
-            assets::AssetKind::Video => {
-                render::video_clip_command(&selection.asset.path, duration, resolution, &clip_path)
-            }
+            assets::AssetKind::Image => render::ken_burns_command(
+                &selection.asset.path,
+                duration,
+                resolution,
+                asset_dimensions,
+                &clip_path,
+            ),
+            assets::AssetKind::Video => render::video_clip_command(
+                &selection.asset.path,
+                duration,
+                resolution,
+                asset_dimensions,
+                &clip_path,
+            ),
         };
 
         if let Err(e) = render::run_ffmpeg(&ffmpeg_args) {
