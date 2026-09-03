@@ -58,9 +58,51 @@ pub(crate) fn normalize_category(name: &str) -> String {
     name.trim().to_lowercase()
 }
 
+/// Minimal SplitMix64 PRNG — enough to shuffle a category's asset list,
+/// not cryptographic. Avoids pulling in the `rand` crate for this one use.
+struct SplitMix64 {
+    state: u64,
+}
+
+impl SplitMix64 {
+    fn new(seed: u64) -> Self {
+        SplitMix64 { state: seed }
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        self.state = self.state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    }
+
+    /// In-place Fisher-Yates shuffle. Modulo bias is negligible at the
+    /// list sizes an asset category realistically holds.
+    fn shuffle<T>(&mut self, items: &mut [T]) {
+        for i in (1..items.len()).rev() {
+            let j = (self.next_u64() % (i as u64 + 1)) as usize;
+            items.swap(i, j);
+        }
+    }
+}
+
+/// A best-effort non-deterministic seed for the shuffle: wall-clock
+/// nanoseconds mixed with the process id, so re-rendering the same plan
+/// picks a different asset order each run.
+fn entropy_seed() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    nanos ^ (std::process::id() as u64).rotate_left(32)
+}
+
 pub struct AssetSelector {
     categories: HashMap<String, Vec<Asset>>,
     cursors: HashMap<String, usize>,
+    rng: SplitMix64,
 }
 
 #[derive(Debug)]
@@ -93,17 +135,26 @@ impl From<std::io::Error> for SelectorError {
 
 impl AssetSelector {
     pub fn new(assets_dir: &Path) -> Result<Self, std::io::Error> {
+        Self::with_seed(assets_dir, entropy_seed())
+    }
+
+    /// Like [`AssetSelector::new`] but with a caller-provided shuffle seed,
+    /// so tests observe a deterministic asset order.
+    pub fn with_seed(assets_dir: &Path, seed: u64) -> Result<Self, std::io::Error> {
         let category_names = discover_categories(assets_dir)?;
+        let mut rng = SplitMix64::new(seed);
 
         let mut categories = HashMap::new();
         for name in category_names {
-            let assets = discover_assets(&assets_dir.join(&name))?;
+            let mut assets = discover_assets(&assets_dir.join(&name))?;
+            rng.shuffle(&mut assets);
             categories.insert(normalize_category(&name), assets);
         }
 
         Ok(AssetSelector {
             categories,
             cursors: HashMap::new(),
+            rng,
         })
     }
 
@@ -124,10 +175,19 @@ impl AssetSelector {
 
         let used_fallback = effective_category != requested;
 
-        let assets = &self.categories[&effective_category];
+        let assets = self
+            .categories
+            .get_mut(&effective_category)
+            .expect("effective category presence is checked above");
         let cursor = self.cursors.entry(effective_category.clone()).or_insert(0);
-        let asset = assets[*cursor % assets.len()].clone();
+        let asset = assets[*cursor].clone();
         *cursor += 1;
+        if *cursor >= assets.len() {
+            // Bag exhausted — reshuffle so the next pass through this
+            // category runs in a fresh random order.
+            self.rng.shuffle(assets);
+            *cursor = 0;
+        }
 
         Ok(Selection {
             asset,
@@ -203,34 +263,77 @@ mod selector_tests {
         std::fs::write(dir.join(name), b"").unwrap();
     }
 
+    fn make_category(dir: &Path, name: &str, count: usize) -> Vec<PathBuf> {
+        std::fs::create_dir(dir.join(name)).unwrap();
+        (0..count)
+            .map(|i| {
+                let file = format!("asset-{i:02}.jpg");
+                write_asset(&dir.join(name), &file);
+                dir.join(name).join(file)
+            })
+            .collect()
+    }
+
     #[test]
-    fn select_cycles_round_robin_within_a_category() {
+    fn select_uses_every_asset_once_per_cycle() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir(dir.path().join("city-broll")).unwrap();
-        write_asset(&dir.path().join("city-broll"), "a.jpg");
-        write_asset(&dir.path().join("city-broll"), "b.jpg");
+        let mut expected = make_category(dir.path(), "city-broll", 12);
+        expected.sort();
 
-        let mut selector = AssetSelector::new(dir.path()).unwrap();
+        let mut selector = AssetSelector::with_seed(dir.path(), 1).unwrap();
 
-        let first = selector.select("city-broll").unwrap();
-        let second = selector.select("city-broll").unwrap();
-        let third = selector.select("city-broll").unwrap();
+        let mut seen: Vec<PathBuf> = (0..12)
+            .map(|_| selector.select("city-broll").unwrap().asset.path)
+            .collect();
+        seen.sort();
 
-        assert_eq!(
-            first.asset.path,
-            dir.path().join("city-broll").join("a.jpg")
+        assert_eq!(seen, expected, "one full cycle should hit every asset once");
+    }
+
+    #[test]
+    fn select_reshuffles_after_exhausting_the_bag() {
+        let dir = tempfile::tempdir().unwrap();
+        make_category(dir.path(), "city-broll", 12);
+
+        let mut selector = AssetSelector::with_seed(dir.path(), 7).unwrap();
+
+        let cycle: Vec<PathBuf> = (0..12)
+            .map(|_| selector.select("city-broll").unwrap().asset.path)
+            .collect();
+        let next_cycle: Vec<PathBuf> = (0..12)
+            .map(|_| selector.select("city-broll").unwrap().asset.path)
+            .collect();
+
+        let mut sorted_next = next_cycle.clone();
+        sorted_next.sort();
+        let mut sorted_first = cycle.clone();
+        sorted_first.sort();
+        assert_eq!(sorted_first, sorted_next, "each cycle covers the full set");
+        assert_ne!(
+            cycle, next_cycle,
+            "the bag should be reshuffled into a new order after exhaustion"
         );
-        assert!(!first.used_fallback);
-        assert_eq!(
-            second.asset.path,
-            dir.path().join("city-broll").join("b.jpg")
+    }
+
+    #[test]
+    fn select_order_depends_on_seed() {
+        let dir = tempfile::tempdir().unwrap();
+        make_category(dir.path(), "city-broll", 12);
+
+        let mut a = AssetSelector::with_seed(dir.path(), 1).unwrap();
+        let mut b = AssetSelector::with_seed(dir.path(), 2).unwrap();
+
+        let order_a: Vec<PathBuf> = (0..12)
+            .map(|_| a.select("city-broll").unwrap().asset.path)
+            .collect();
+        let order_b: Vec<PathBuf> = (0..12)
+            .map(|_| b.select("city-broll").unwrap().asset.path)
+            .collect();
+
+        assert_ne!(
+            order_a, order_b,
+            "different seeds should shuffle differently"
         );
-        assert!(!second.used_fallback);
-        assert_eq!(
-            third.asset.path,
-            dir.path().join("city-broll").join("a.jpg")
-        );
-        assert!(!third.used_fallback);
     }
 
     #[test]

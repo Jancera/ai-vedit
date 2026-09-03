@@ -130,7 +130,6 @@ fn run_plan(args: PlanArgs) {
 
     let plan_file = PlanFile {
         audio_path: args.audio.clone(),
-        aspect: args.aspect,
         beats: plan.beats,
     };
 
@@ -206,13 +205,7 @@ fn run_render(args: RenderArgs) {
         std::process::exit(1);
     }
 
-    if args.aspect != plan_file.aspect {
-        eprintln!(
-            "warning: --aspect {:?} differs from the plan's aspect {:?}; using the plan's aspect",
-            args.aspect, plan_file.aspect
-        );
-    }
-    let resolution = render::resolution_for(plan_file.aspect);
+    let resolution = render::resolution_for(args.aspect);
     let total = plan_file.beats.len();
     if plan_file.beats.is_empty() {
         eprintln!("error: plan has no beats to render");

@@ -81,15 +81,17 @@ assets/
 - Supported asset types: images (`.jpg`, `.jpeg`, `.png`, `.webp`) and video (`.mp4`).
 - A reserved `general/` category acts as a fallback when no specific category fits a
   beat, or when the chosen category has no assets at all (empty or missing folder).
-- Within a category, assets are picked by simple rotation (round-robin): every file
-  is used once before any file repeats — no content-matching in the MVP.
+- Within a category, assets are drawn from a shuffled bag: the file list is shuffled
+  into a random order, then walked in order, reshuffling once every file has been used.
+  Every file is still used once before any file repeats, but the order (and which asset
+  lands on which beat) differs on each render. No content-matching in the MVP.
 
 ## CLI usage
 
 ### `plan`
 
 ```
-ai-vedit plan --audio script.mp3 [--assets ./assets] [--aspect 16:9|9:16] [--min-beat-duration 5]
+ai-vedit plan --audio script.mp3 [--assets ./assets] [--min-beat-duration 5]
 ```
 
 - Transcribes the audio (transcript is cached to disk at
@@ -140,7 +142,7 @@ and `render` subcommands parse arguments and validate config
 (caching the result locally), then segments the transcript into beats
 matched to asset categories via the OpenAI chat completions API, writes
 `plan.json`, and prints a per-category time-budget report. `render` wires
-up asset selection (file discovery + round-robin selection with `general/`
+up asset selection (file discovery + shuffled-bag selection with `general/`
 fallback) with an ffmpeg rendering pipeline: it generates a full video with
 a Ken Burns effect for images, loop-and-trim for video clips, concatenates
 all beat clips, and overlays the narration audio. M5 added case/whitespace-

@@ -51,13 +51,23 @@ fn plan_without_audio_arg_fails() {
 }
 
 #[test]
-fn plan_rejects_invalid_aspect() {
+fn render_rejects_invalid_aspect() {
     let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
-    cmd.args(["plan", "--audio", "script.mp3", "--aspect", "4:3"]);
+    cmd.args(["render", "--plan", "plan.json", "--aspect", "4:3"]);
     cmd.assert()
         .failure()
         .code(2)
         .stderr(predicate::str::contains("4:3"));
+}
+
+#[test]
+fn plan_ignores_unknown_aspect_flag() {
+    let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
+    cmd.args(["plan", "--audio", "script.mp3", "--aspect", "16:9"]);
+    cmd.assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("--aspect"));
 }
 
 #[test]
@@ -100,7 +110,7 @@ fn plan_with_empty_api_key_fails() {
 }
 
 #[test]
-fn plan_defaults_to_16_9_aspect() {
+fn plan_does_not_write_an_aspect_field() {
     let dir = tempfile::tempdir().unwrap();
     let audio_path = write_fixture_audio(dir.path());
     let mut server = mockito::Server::new();
@@ -115,32 +125,10 @@ fn plan_defaults_to_16_9_aspect() {
     cmd.assert().success();
 
     let plan_json = std::fs::read_to_string(dir.path().join("plan.json")).unwrap();
-    assert!(plan_json.contains("Sixteen9"));
-}
-
-#[test]
-fn plan_accepts_9_16_aspect() {
-    let dir = tempfile::tempdir().unwrap();
-    let audio_path = write_fixture_audio(dir.path());
-    let mut server = mockito::Server::new();
-    let _mock = mock_successful_transcription(&mut server);
-    let _plan_mock = mock_successful_plan(&mut server);
-
-    let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
-    cmd.current_dir(dir.path());
-    cmd.args([
-        "plan",
-        "--audio",
-        audio_path.to_str().unwrap(),
-        "--aspect",
-        "9:16",
-    ]);
-    cmd.env("OPENAI_API_KEY", "test-key");
-    cmd.env("AI_VEDIT_OPENAI_BASE_URL", server.url());
-    cmd.assert().success();
-
-    let plan_json = std::fs::read_to_string(dir.path().join("plan.json")).unwrap();
-    assert!(plan_json.contains("Nine16"));
+    assert!(
+        !plan_json.contains("aspect"),
+        "plan.json should no longer carry an aspect field: {plan_json}"
+    );
 }
 
 #[test]
