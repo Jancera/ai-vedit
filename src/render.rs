@@ -10,6 +10,14 @@ pub const FPS: u32 = 60;
 /// be scaled down to fit (rather than cropped/padded at native size).
 const ASPECT_TOLERANCE: f64 = 0.01;
 
+/// Factor by which the framed image is upscaled before `zoompan` in the
+/// Ken Burns pass. `zoompan` quantizes its crop window to whole source
+/// pixels every frame, so a slow zoom snaps by 1px intermittently and
+/// shimmers; upscaling first shrinks that step by this factor, then
+/// `zoompan`'s `s=` downscales back to the output. Costs a `4*width` x
+/// `4*height` intermediate frame (7680x4320 for 1080p); images only.
+const KEN_BURNS_UPSCALE: u32 = 4;
+
 pub fn resolution_for(aspect: AspectRatio) -> (u32, u32) {
     match aspect {
         AspectRatio::Sixteen9 => (1920, 1080),
@@ -66,7 +74,7 @@ pub fn ken_burns_command(
     let last_frame = frames.saturating_sub(1).max(1);
     let fit = fit_filter(width, height, asset_dimensions);
     let zoompan = format!(
-        "{fit},zoompan=z='1+0.15*on/{last_frame}':d={frames}:s={width}x{height}:fps={FPS}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+        "{fit},scale=iw*{KEN_BURNS_UPSCALE}:ih*{KEN_BURNS_UPSCALE}:flags=lanczos,zoompan=z='1+0.15*on/{last_frame}':d={frames}:s={width}x{height}:fps={FPS}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
     );
 
     vec![
@@ -358,7 +366,7 @@ mod tests {
                 "-t".to_string(),
                 "2.000".to_string(),
                 "-vf".to_string(),
-                "crop=min(iw\\,1920):min(ih\\,1080),pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black,zoompan=z='1+0.15*on/119':d=120:s=1920x1080:fps=60:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+                "crop=min(iw\\,1920):min(ih\\,1080),pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black,scale=iw*4:ih*4:flags=lanczos,zoompan=z='1+0.15*on/119':d=120:s=1920x1080:fps=60:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
                     .to_string(),
                 "-r".to_string(),
                 "60".to_string(),
@@ -382,7 +390,24 @@ mod tests {
         let vf = &args[args.iter().position(|a| a == "-vf").unwrap() + 1];
         assert_eq!(
             vf,
-            "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080:(iw-ow)/2:(ih-oh)/2,zoompan=z='1+0.15*on/119':d=120:s=1920x1080:fps=60:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+            "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080:(iw-ow)/2:(ih-oh)/2,scale=iw*4:ih*4:flags=lanczos,zoompan=z='1+0.15*on/119':d=120:s=1920x1080:fps=60:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+        );
+    }
+
+    #[test]
+    fn ken_burns_command_upscales_before_zoompan() {
+        let args = ken_burns_command(
+            Path::new("photo.jpg"),
+            2.0,
+            (1920, 1080),
+            None,
+            Path::new("out.mp4"),
+        );
+
+        let vf = &args[args.iter().position(|a| a == "-vf").unwrap() + 1];
+        assert!(
+            vf.contains(",scale=iw*4:ih*4:flags=lanczos,zoompan="),
+            "expected a 4x lanczos upscale immediately before zoompan, got: {vf}"
         );
     }
 
