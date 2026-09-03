@@ -49,6 +49,25 @@ You'll need:
    addresses (e.g. `Closes #12`)
 5. Be responsive to review feedback — small back-and-forth is normal
 
+## Cutting a release
+
+Releases are built and published by
+[`.github/workflows/release.yml`](.github/workflows/release.yml) when a
+`vX.Y.Z` tag is pushed. To cut one:
+
+1. Bump `version` in `Cargo.toml` (and commit `Cargo.lock`), land it on `main`.
+2. Tag the release commit and push the tag:
+
+   ```bash
+   git tag v0.1.0
+   git push origin v0.1.0
+   ```
+
+The workflow verifies the tag matches `Cargo.toml` (it fails otherwise), builds
+a statically linked `x86_64-unknown-linux-musl` binary, and attaches
+`ai-vedit-<version>-x86_64-unknown-linux-musl.tar.gz` plus its `.sha256` to an
+auto-generated GitHub Release. Linux x86_64 is the only target for now.
+
 ## Design decisions
 
 Architectural decisions (language choice, transcription/LLM providers, asset

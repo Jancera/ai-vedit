@@ -24,15 +24,67 @@ script.mp3 --> transcribe --> agent plans shot list --> user fills asset categor
    duration, and stitches everything together with ffmpeg over the original narration
    audio.
 
+## Install
+
+### ffmpeg (required at runtime)
+
+`ai-vedit` shells out to [`ffmpeg`](https://ffmpeg.org/) and `ffprobe`, so both
+must be on your `PATH` no matter how you install `ai-vedit` itself.
+
+```bash
+# Debian / Ubuntu
+sudo apt install ffmpeg
+
+# Fedora
+sudo dnf install ffmpeg          # or ffmpeg-free from the default repos
+
+# Arch
+sudo pacman -S ffmpeg
+```
+
+If your distro ships an old ffmpeg (or none), grab a static build from
+[johnvansickle.com/ffmpeg](https://johnvansickle.com/ffmpeg/) or
+[ffmpeg.org/download.html](https://ffmpeg.org/download.html) and put `ffmpeg`
+and `ffprobe` somewhere on your `PATH`. Verify with:
+
+```bash
+ffmpeg -version && ffprobe -version
+```
+
+### Prebuilt binary (x86_64 Linux)
+
+Each tagged release publishes a statically linked `x86_64` Linux binary that
+runs on any modern distro. Grab the latest from the
+[Releases page](../../releases/latest):
+
+```bash
+ver=0.1.0   # set to the release you want
+base="ai-vedit-${ver}-x86_64-unknown-linux-musl"
+
+curl -LO "https://github.com/Jancera/ai-vedit/releases/download/v${ver}/${base}.tar.gz"
+curl -LO "https://github.com/Jancera/ai-vedit/releases/download/v${ver}/${base}.tar.gz.sha256"
+sha256sum -c "${base}.tar.gz.sha256"
+
+tar -xzf "${base}.tar.gz"
+install -Dm755 "${base}/ai-vedit" ~/.local/bin/ai-vedit
+# make sure ~/.local/bin is on your PATH
+ai-vedit --version
+```
+
+### From source
+
+Requires a stable Rust toolchain ([rustup](https://rustup.rs)):
+
+```bash
+cargo install --path .          # installs `ai-vedit` onto your PATH
+# or: cargo build --release     # produces target/release/ai-vedit
+```
+
 ## Quickstart
 
 Prerequisites:
 
-- [`ffmpeg`](https://ffmpeg.org/) installed and on your `PATH`.
-- The `ai-vedit` binary, built from source (no published binary yet):
-  `cargo build --release` produces `target/release/ai-vedit`, or run
-  `cargo install --path .` to put `ai-vedit` on your `PATH` so the commands
-  below work as shown.
+- `ai-vedit` installed (see [Install](#install) above) and `ffmpeg` on your `PATH`.
 - An `OPENAI_API_KEY` (used for transcription and planning, set below).
 
 ```bash

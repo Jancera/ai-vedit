@@ -50,6 +50,12 @@ labels). This file tracks the higher-level milestones those issues fall under.
 - [x] End-to-end integration test (sample audio + sample assets → rendered output)
 - [x] Usage docs / examples in README
 
+### Distribution ✅ done
+- [x] Tagged `vX.Y.Z` releases publish a statically linked
+  `x86_64-unknown-linux-musl` binary via GitHub Actions
+  ([`release.yml`](.github/workflows/release.yml)); install instructions in
+  [README](README.md#install). macOS/Windows builds are not planned yet.
+
 ## Ideas beyond the MVP (not committed yet)
 
 These came up during design but were explicitly deferred to keep the MVP
