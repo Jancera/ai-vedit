@@ -129,8 +129,54 @@ fn run_plan(args: PlanArgs) {
         }
     };
 
-    let subtitles = if args.subtitles {
-        let style = subtitles::SubtitleStyle::default();
+    let enable_subtitles = args.subtitles
+        || args.subtitle_font.is_some()
+        || args.subtitle_font_size.is_some()
+        || args.subtitle_primary_color.is_some()
+        || args.subtitle_bold
+        || args.subtitle_italic
+        || args.subtitle_uppercase
+        || args.subtitle_position.is_some()
+        || args.subtitle_margin_vertical.is_some()
+        || args.subtitle_max_chars_per_line.is_some()
+        || args.subtitle_max_lines.is_some()
+        || args.subtitle_max_duration.is_some();
+
+    let subtitles = if enable_subtitles {
+        let mut style = subtitles::SubtitleStyle::default();
+        if let Some(font) = args.subtitle_font {
+            style.font = font;
+        }
+        if let Some(size) = args.subtitle_font_size {
+            style.font_size = size;
+        }
+        if let Some(color) = args.subtitle_primary_color {
+            style.primary_color = color;
+        }
+        if args.subtitle_bold {
+            style.bold = true;
+        }
+        if args.subtitle_italic {
+            style.italic = true;
+        }
+        if args.subtitle_uppercase {
+            style.uppercase = true;
+        }
+        if let Some(pos) = args.subtitle_position {
+            style.position = pos;
+        }
+        if let Some(margin) = args.subtitle_margin_vertical {
+            style.margin_vertical = margin;
+        }
+        if let Some(chars) = args.subtitle_max_chars_per_line {
+            style.max_chars_per_line = chars;
+        }
+        if let Some(lines) = args.subtitle_max_lines {
+            style.max_lines = lines;
+        }
+        if let Some(dur) = args.subtitle_max_duration {
+            style.max_duration = Some(dur);
+        }
         let cues = subtitles::segments_to_cues(
             &transcript.segments,
             style.max_chars_per_line,
