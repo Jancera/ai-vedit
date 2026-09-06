@@ -1,6 +1,7 @@
 use crate::whisper::Segment;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::fmt::Write as _;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Subtitles {
@@ -150,7 +151,6 @@ fn split_into_chunks(text: &str, n: usize) -> Vec<String> {
 }
 
 #[derive(Debug, PartialEq)]
-#[allow(dead_code)]
 pub enum SubtitleError {
     InvalidColor(String),
     ZeroField(&'static str),
@@ -170,7 +170,6 @@ impl fmt::Display for SubtitleError {
 impl std::error::Error for SubtitleError {}
 
 /// `#RRGGBB` -> ASS `&H00BBGGRR` (opaque). Any other shape is an error.
-#[allow(dead_code)]
 fn hex_to_ass_color(hex: &str) -> Result<String, SubtitleError> {
     let err = || SubtitleError::InvalidColor(hex.to_string());
     let body = hex.strip_prefix('#').ok_or_else(err)?;
@@ -184,7 +183,6 @@ fn hex_to_ass_color(hex: &str) -> Result<String, SubtitleError> {
 }
 
 /// Seconds -> ASS timestamp `H:MM:SS.cc` (centiseconds). Negatives clamp to 0.
-#[allow(dead_code)]
 fn format_ass_time(seconds: f64) -> String {
     let cs = (seconds.max(0.0) * 100.0).round() as i64;
     let h = cs / 360_000;
@@ -196,7 +194,6 @@ fn format_ass_time(seconds: f64) -> String {
 
 /// Escapes ASS dialogue text: strips CR, turns LF into a space, and
 /// backslash-escapes `\`, `{`, `}`.
-#[allow(dead_code)]
 fn escape_ass_text(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for ch in text.chars() {
@@ -215,7 +212,6 @@ fn escape_ass_text(text: &str) -> String {
 /// Greedy word wrap. Builds up to `max_lines` lines no wider than
 /// `max_chars`; any remaining words are appended to the final line
 /// (overflow beats truncation). Lines are joined with a literal `\N`.
-#[allow(dead_code)]
 fn wrap_text(text: &str, max_chars: usize, max_lines: usize) -> String {
     let max_chars = max_chars.max(1);
     let max_lines = max_lines.max(1);
@@ -257,6 +253,97 @@ fn wrap_text(text: &str, max_chars: usize, max_lines: usize) -> String {
         lines.push(current);
     }
     lines.join("\\N")
+}
+
+impl SubtitleStyle {
+    /// Rejects zero-valued layout fields and a malformed `primary_color`.
+    pub fn validate(&self) -> Result<(), SubtitleError> {
+        if self.font_size == 0 {
+            return Err(SubtitleError::ZeroField("font_size"));
+        }
+        if self.max_lines == 0 {
+            return Err(SubtitleError::ZeroField("max_lines"));
+        }
+        if self.max_chars_per_line == 0 {
+            return Err(SubtitleError::ZeroField("max_chars_per_line"));
+        }
+        hex_to_ass_color(&self.primary_color)?;
+        Ok(())
+    }
+}
+
+/// Renders cues + style into a complete ASS document. A fixed 2px opaque
+/// black outline is always applied. Validates the style first.
+#[allow(dead_code)]
+pub fn cues_to_ass(
+    cues: &[Cue],
+    style: &SubtitleStyle,
+    resolution: (u32, u32),
+) -> Result<String, SubtitleError> {
+    style.validate()?;
+    let primary = hex_to_ass_color(&style.primary_color)?;
+    let (width, height) = resolution;
+    let alignment = match style.position {
+        SubtitlePosition::Bottom => 2,
+        SubtitlePosition::Middle => 5,
+        SubtitlePosition::Top => 8,
+    };
+    let bold = if style.bold { -1 } else { 0 };
+    let italic = if style.italic { -1 } else { 0 };
+
+    let mut out = String::new();
+    out.push_str("[Script Info]\n");
+    out.push_str("ScriptType: v4.00+\n");
+    let _ = writeln!(out, "PlayResX: {width}");
+    let _ = writeln!(out, "PlayResY: {height}");
+    out.push_str("WrapStyle: 2\n");
+    out.push_str("ScaledBorderAndShadow: yes\n\n");
+
+    out.push_str("[V4+ Styles]\n");
+    out.push_str(
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, \
+         BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, \
+         BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n",
+    );
+    let _ = writeln!(
+        out,
+        "Style: Default,{font},{size},{primary},{primary},&H00000000,&H00000000,{bold},{italic},\
+         0,0,100,100,0,0,1,2,0,{alignment},40,40,{margin_v},1",
+        font = style.font,
+        size = style.font_size,
+        margin_v = style.margin_vertical,
+    );
+    out.push('\n');
+
+    out.push_str("[Events]\n");
+    out.push_str("Format: Layer, Start, End, Style, Name, MarginL, MarginR, Effect, Text\n");
+    for cue in cues {
+        let mut end = cue.end;
+        if let Some(limit) = style.max_duration {
+            if limit > 0.0 {
+                end = end.min(cue.start + limit);
+            }
+        }
+        let raw = if style.uppercase {
+            cue.text.to_uppercase()
+        } else {
+            cue.text.clone()
+        };
+        let escaped = escape_ass_text(&raw);
+        let text = wrap_text(
+            &escaped,
+            style.max_chars_per_line as usize,
+            style.max_lines as usize,
+        );
+        let _ = writeln!(
+            out,
+            "Dialogue: 0,{start},{end},Default,,0,0,0,,{text}",
+            start = format_ass_time(cue.start),
+            end = format_ass_time(end),
+        );
+    }
+
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -432,5 +519,132 @@ mod tests {
         assert_eq!(escape_ass_text("a {b} c"), "a \\{b\\} c");
         assert_eq!(escape_ass_text("x\\y"), "x\\\\y");
         assert_eq!(escape_ass_text("line1\r\nline2"), "line1 line2");
+    }
+
+    fn style_at(position: SubtitlePosition) -> SubtitleStyle {
+        SubtitleStyle {
+            position,
+            ..SubtitleStyle::default()
+        }
+    }
+
+    #[test]
+    fn validate_rejects_zero_fields_and_bad_colour() {
+        assert_eq!(
+            SubtitleStyle {
+                font_size: 0,
+                ..SubtitleStyle::default()
+            }
+            .validate(),
+            Err(SubtitleError::ZeroField("font_size"))
+        );
+        assert_eq!(
+            SubtitleStyle {
+                max_lines: 0,
+                ..SubtitleStyle::default()
+            }
+            .validate(),
+            Err(SubtitleError::ZeroField("max_lines"))
+        );
+        assert_eq!(
+            SubtitleStyle {
+                max_chars_per_line: 0,
+                ..SubtitleStyle::default()
+            }
+            .validate(),
+            Err(SubtitleError::ZeroField("max_chars_per_line"))
+        );
+        assert_eq!(
+            SubtitleStyle {
+                primary_color: "nope".to_string(),
+                ..SubtitleStyle::default()
+            }
+            .validate(),
+            Err(SubtitleError::InvalidColor("nope".to_string()))
+        );
+        assert!(SubtitleStyle::default().validate().is_ok());
+    }
+
+    #[test]
+    fn ass_header_carries_resolution() {
+        let ass = cues_to_ass(&[], &SubtitleStyle::default(), (1920, 1080)).unwrap();
+        assert!(ass.contains("PlayResX: 1920"));
+        assert!(ass.contains("PlayResY: 1080"));
+        assert!(ass.contains("[V4+ Styles]"));
+        assert!(ass.contains("[Events]"));
+    }
+
+    #[test]
+    fn ass_style_line_reflects_position_and_flags() {
+        let bottom = cues_to_ass(&[], &style_at(SubtitlePosition::Bottom), (1920, 1080)).unwrap();
+        let middle = cues_to_ass(&[], &style_at(SubtitlePosition::Middle), (1920, 1080)).unwrap();
+        let top = cues_to_ass(&[], &style_at(SubtitlePosition::Top), (1920, 1080)).unwrap();
+        // Alignment is the 19th field on the "Style: Default,..." line.
+        let alignment = |ass: &str| {
+            ass.lines()
+                .find(|l| l.starts_with("Style: Default,"))
+                .unwrap()
+                .trim_start_matches("Style: Default,")
+                .split(',')
+                .nth(17)
+                .unwrap()
+                .to_string()
+        };
+        assert_eq!(alignment(&bottom), "2");
+        assert_eq!(alignment(&middle), "5");
+        assert_eq!(alignment(&top), "8");
+
+        let bold = SubtitleStyle {
+            bold: true,
+            italic: true,
+            ..SubtitleStyle::default()
+        };
+        let ass = cues_to_ass(&[], &bold, (1920, 1080)).unwrap();
+        let style_line = ass
+            .lines()
+            .find(|l| l.starts_with("Style: Default,"))
+            .unwrap();
+        // Bold is field 7, Italic field 8 (0-based 6 and 7) after "Style: Default,".
+        let fields: Vec<&str> = style_line
+            .trim_start_matches("Style: Default,")
+            .split(',')
+            .collect();
+        assert_eq!(fields[6], "-1");
+        assert_eq!(fields[7], "-1");
+    }
+
+    #[test]
+    fn ass_dialogue_applies_uppercase_wrap_escape_and_timing() {
+        let style = SubtitleStyle {
+            uppercase: true,
+            max_chars_per_line: 6,
+            max_lines: 2,
+            max_duration: Some(1.0),
+            ..SubtitleStyle::default()
+        };
+        let cues = vec![Cue {
+            start: 0.0,
+            end: 5.0,
+            text: "keep {it} short please".to_string(),
+        }];
+        let ass = cues_to_ass(&cues, &style, (1920, 1080)).unwrap();
+        let dialogue = ass.lines().find(|l| l.starts_with("Dialogue:")).unwrap();
+        assert!(dialogue.contains("KEEP")); // uppercased
+        assert!(dialogue.contains("\\{IT\\}")); // escaped braces
+        assert!(dialogue.contains("\\N")); // wrapped
+        assert!(dialogue.starts_with("Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,"));
+        // max_duration clamp
+    }
+
+    #[test]
+    fn cues_to_ass_propagates_validation_errors() {
+        let bad = SubtitleStyle {
+            font_size: 0,
+            ..SubtitleStyle::default()
+        };
+        assert_eq!(
+            cues_to_ass(&[], &bad, (1920, 1080)),
+            Err(SubtitleError::ZeroField("font_size"))
+        );
     }
 }
