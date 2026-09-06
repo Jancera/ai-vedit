@@ -316,7 +316,9 @@ pub fn cues_to_ass(
     out.push('\n');
 
     out.push_str("[Events]\n");
-    out.push_str("Format: Layer, Start, End, Style, Name, MarginL, MarginR, Effect, Text\n");
+    out.push_str(
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n",
+    );
     for cue in cues {
         let mut end = cue.end;
         if let Some(limit) = style.max_duration {
