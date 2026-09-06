@@ -4,11 +4,14 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::planner::Beat;
+use crate::subtitles::Subtitles;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PlanFile {
     pub audio_path: PathBuf,
     pub beats: Vec<Beat>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subtitles: Option<Subtitles>,
 }
 
 #[derive(Debug)]
@@ -60,6 +63,7 @@ mod tests {
                 category: "city-broll".to_string(),
                 is_new_category: false,
             }],
+            subtitles: None,
         }
     }
 
@@ -121,5 +125,17 @@ mod tests {
             Err(PlanFileError::Json(_)) => {}
             other => panic!("expected Json error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn save_omits_subtitles_key_when_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("plan.json");
+        save(&path, &sample_plan_file()).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            !text.contains("subtitles"),
+            "plan.json must not carry a subtitles key when None: {text}"
+        );
     }
 }

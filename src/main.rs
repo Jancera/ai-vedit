@@ -6,6 +6,7 @@ mod library;
 mod plan_file;
 mod planner;
 mod render;
+mod subtitles;
 mod whisper;
 
 use clap::Parser;
@@ -131,6 +132,7 @@ fn run_plan(args: PlanArgs) {
     let plan_file = PlanFile {
         audio_path: args.audio.clone(),
         beats: plan.beats,
+        subtitles: None,
     };
 
     let plan_path = std::path::Path::new("plan.json");
