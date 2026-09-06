@@ -1,5 +1,6 @@
 use crate::whisper::Segment;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Subtitles {
@@ -148,6 +149,116 @@ fn split_into_chunks(text: &str, n: usize) -> Vec<String> {
     chunks
 }
 
+#[derive(Debug, PartialEq)]
+#[allow(dead_code)]
+pub enum SubtitleError {
+    InvalidColor(String),
+    ZeroField(&'static str),
+}
+
+impl fmt::Display for SubtitleError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SubtitleError::InvalidColor(v) => {
+                write!(f, "primary_color must be \"#RRGGBB\" hex, got {v:?}")
+            }
+            SubtitleError::ZeroField(name) => write!(f, "{name} must be greater than 0"),
+        }
+    }
+}
+
+impl std::error::Error for SubtitleError {}
+
+/// `#RRGGBB` -> ASS `&H00BBGGRR` (opaque). Any other shape is an error.
+#[allow(dead_code)]
+fn hex_to_ass_color(hex: &str) -> Result<String, SubtitleError> {
+    let err = || SubtitleError::InvalidColor(hex.to_string());
+    let body = hex.strip_prefix('#').ok_or_else(err)?;
+    if body.len() != 6 || !body.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(err());
+    }
+    let r = u8::from_str_radix(&body[0..2], 16).map_err(|_| err())?;
+    let g = u8::from_str_radix(&body[2..4], 16).map_err(|_| err())?;
+    let b = u8::from_str_radix(&body[4..6], 16).map_err(|_| err())?;
+    Ok(format!("&H00{b:02X}{g:02X}{r:02X}"))
+}
+
+/// Seconds -> ASS timestamp `H:MM:SS.cc` (centiseconds). Negatives clamp to 0.
+#[allow(dead_code)]
+fn format_ass_time(seconds: f64) -> String {
+    let cs = (seconds.max(0.0) * 100.0).round() as i64;
+    let h = cs / 360_000;
+    let m = (cs % 360_000) / 6_000;
+    let s = (cs % 6_000) / 100;
+    let c = cs % 100;
+    format!("{h}:{m:02}:{s:02}.{c:02}")
+}
+
+/// Escapes ASS dialogue text: strips CR, turns LF into a space, and
+/// backslash-escapes `\`, `{`, `}`.
+#[allow(dead_code)]
+fn escape_ass_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '\r' => {}
+            '\n' => out.push(' '),
+            '\\' => out.push_str("\\\\"),
+            '{' => out.push_str("\\{"),
+            '}' => out.push_str("\\}"),
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+/// Greedy word wrap. Builds up to `max_lines` lines no wider than
+/// `max_chars`; any remaining words are appended to the final line
+/// (overflow beats truncation). Lines are joined with a literal `\N`.
+#[allow(dead_code)]
+fn wrap_text(text: &str, max_chars: usize, max_lines: usize) -> String {
+    let max_chars = max_chars.max(1);
+    let max_lines = max_lines.max(1);
+    let words: Vec<&str> = text.split_whitespace().collect();
+    if words.is_empty() {
+        return String::new();
+    }
+
+    let mut lines: Vec<String> = Vec::new();
+    let mut current = String::new();
+
+    for word in words {
+        let on_last_line = lines.len() + 1 >= max_lines;
+        if on_last_line {
+            if current.is_empty() {
+                current.push_str(word);
+            } else {
+                current.push(' ');
+                current.push_str(word);
+            }
+            continue;
+        }
+        let would_be = if current.is_empty() {
+            word.chars().count()
+        } else {
+            current.chars().count() + 1 + word.chars().count()
+        };
+        if !current.is_empty() && would_be > max_chars {
+            lines.push(std::mem::take(&mut current));
+            current.push_str(word);
+        } else if current.is_empty() {
+            current.push_str(word);
+        } else {
+            current.push(' ');
+            current.push_str(word);
+        }
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    lines.join("\\N")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -266,5 +377,60 @@ mod tests {
         let cues = segments_to_cues(&[seg(0.0, 2.0, "supercalifragilistic")], 5, 1, None);
         assert_eq!(cues.len(), 1);
         assert_eq!(cues[0].text, "supercalifragilistic");
+    }
+
+    #[test]
+    fn hex_color_converts_to_ass_bgr() {
+        assert_eq!(hex_to_ass_color("#FFFFFF").unwrap(), "&H00FFFFFF");
+        assert_eq!(hex_to_ass_color("#FF8800").unwrap(), "&H000088FF");
+        assert_eq!(hex_to_ass_color("#000000").unwrap(), "&H00000000");
+    }
+
+    #[test]
+    fn hex_color_rejects_bad_input() {
+        assert_eq!(
+            hex_to_ass_color("red"),
+            Err(SubtitleError::InvalidColor("red".to_string()))
+        );
+        assert_eq!(
+            hex_to_ass_color("#FFF"),
+            Err(SubtitleError::InvalidColor("#FFF".to_string()))
+        );
+        assert_eq!(
+            hex_to_ass_color("#GGGGGG"),
+            Err(SubtitleError::InvalidColor("#GGGGGG".to_string()))
+        );
+    }
+
+    #[test]
+    fn ass_time_formats_hms_centiseconds() {
+        assert_eq!(format_ass_time(0.0), "0:00:00.00");
+        assert_eq!(format_ass_time(65.4), "0:01:05.40");
+        assert_eq!(format_ass_time(3661.0), "1:01:01.00");
+        assert_eq!(format_ass_time(-2.0), "0:00:00.00");
+    }
+
+    #[test]
+    fn wrap_text_breaks_into_at_most_max_lines() {
+        let wrapped = wrap_text("one two three four five six", 9, 2);
+        let lines: Vec<&str> = wrapped.split("\\N").collect();
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].chars().count() <= 9);
+        // Overflow past max_lines lands on the final line rather than truncating.
+        let long = wrap_text("aa bb cc dd ee ff gg hh ii jj", 5, 2);
+        assert_eq!(long.split("\\N").count(), 2);
+        assert!(long.contains("jj"));
+    }
+
+    #[test]
+    fn wrap_text_single_line_when_max_lines_is_one() {
+        assert_eq!(wrap_text("a b c d e", 3, 1), "a b c d e");
+    }
+
+    #[test]
+    fn escape_ass_text_handles_braces_backslash_and_newlines() {
+        assert_eq!(escape_ass_text("a {b} c"), "a \\{b\\} c");
+        assert_eq!(escape_ass_text("x\\y"), "x\\\\y");
+        assert_eq!(escape_ass_text("line1\r\nline2"), "line1 line2");
     }
 }
