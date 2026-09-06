@@ -68,7 +68,10 @@ impl Default for SubtitleStyle {
 ///
 /// `max_chars_per_line * max_lines` is the soft character target per cue.
 /// When `max_duration` is `Some(limit > 0.0)`, extra splits are forced so
-/// no cue spans more than `limit` seconds.
+/// no emitted cue spans more than `limit` seconds: chunks are first sized
+/// to target `limit`, then any chunk that would still exceed it after
+/// character-proportional timing (e.g. a single very long word) is divided
+/// into equal-time sub-cues with its words apportioned across them.
 pub fn segments_to_cues(
     segments: &[Segment],
     max_chars_per_line: u32,
@@ -114,16 +117,76 @@ pub fn segments_to_cues(
                 let frac = chunk.chars().count() as f64 / total_chars as f64;
                 cursor + duration * frac
             };
-            cues.push(Cue {
-                start: cursor,
-                end: cue_end,
-                text: chunk.clone(),
-            });
+            push_bounded_cues(&mut cues, cursor, cue_end, chunk, max_duration);
             cursor = cue_end;
         }
     }
 
     cues
+}
+
+/// Pushes `text` spanning `[start, end]` onto `cues`. When `max_duration`
+/// is `Some(limit > 0.0)` and the span exceeds `limit`, the span is cut
+/// into `ceil(span / limit)` equal-time sub-cues (each `<= limit`) with
+/// `text`'s words apportioned across them by character count; if there are
+/// fewer words than sub-cues the trailing sub-cues repeat the last word
+/// group so the caption stays on screen for the whole span.
+fn push_bounded_cues(
+    cues: &mut Vec<Cue>,
+    start: f64,
+    end: f64,
+    text: &str,
+    max_duration: Option<f64>,
+) {
+    let limit = match max_duration {
+        Some(limit) if limit > 0.0 => limit,
+        _ => {
+            cues.push(Cue {
+                start,
+                end,
+                text: text.to_string(),
+            });
+            return;
+        }
+    };
+
+    let span = end - start;
+    if span <= limit {
+        cues.push(Cue {
+            start,
+            end,
+            text: text.to_string(),
+        });
+        return;
+    }
+
+    let sub_n = (span / limit).ceil().max(2.0) as usize;
+    let parts = split_into_chunks(text, sub_n);
+    if parts.is_empty() {
+        cues.push(Cue {
+            start,
+            end,
+            text: text.to_string(),
+        });
+        return;
+    }
+
+    let step = span / sub_n as f64;
+    let mut sub_start = start;
+    for j in 0..sub_n {
+        let sub_end = if j == sub_n - 1 {
+            end
+        } else {
+            sub_start + step
+        };
+        let part = parts.get(j).or_else(|| parts.last()).cloned().unwrap();
+        cues.push(Cue {
+            start: sub_start,
+            end: sub_end,
+            text: part,
+        });
+        sub_start = sub_end;
+    }
 }
 
 /// Splits `text` into an even `n`-way partition of whole words: `n`
@@ -151,6 +214,7 @@ fn split_into_chunks(text: &str, n: usize) -> Vec<String> {
 #[derive(Debug, PartialEq)]
 pub enum SubtitleError {
     InvalidColor(String),
+    InvalidFont(String),
     ZeroField(&'static str),
 }
 
@@ -159,6 +223,12 @@ impl fmt::Display for SubtitleError {
         match self {
             SubtitleError::InvalidColor(v) => {
                 write!(f, "primary_color must be \"#RRGGBB\" hex, got {v:?}")
+            }
+            SubtitleError::InvalidFont(v) => {
+                write!(
+                    f,
+                    "font must be a plain font-family name (no comma or newline), got {v:?}"
+                )
             }
             SubtitleError::ZeroField(name) => write!(f, "{name} must be greater than 0"),
         }
@@ -266,6 +336,16 @@ impl SubtitleStyle {
             return Err(SubtitleError::ZeroField("max_chars_per_line"));
         }
         hex_to_ass_color(&self.primary_color)?;
+        // `font` is interpolated raw into the comma-delimited ASS `Style:`
+        // line; a comma or newline would break that line or inject extra
+        // ASS directives, and an all-blank name draws nothing.
+        if self.font.trim().is_empty()
+            || self.font.contains(',')
+            || self.font.contains('\n')
+            || self.font.contains('\r')
+        {
+            return Err(SubtitleError::InvalidFont(self.font.clone()));
+        }
         Ok(())
     }
 }
@@ -443,6 +523,26 @@ mod tests {
     }
 
     #[test]
+    fn max_duration_bounds_every_cue_span_even_with_a_long_word() {
+        // "dddd..." is one 30-char word that char-proportional timing would
+        // otherwise stretch well past the 2s cap.
+        let text = "a bb ccc dddddddddddddddddddddddddddddd";
+        let cues = segments_to_cues(&[seg(0.0, 10.0, text)], 42, 2, Some(2.0));
+        assert!(!cues.is_empty());
+        for cue in &cues {
+            assert!(
+                cue.end - cue.start <= 2.0 + 1e-9,
+                "cue {cue:?} spans more than the 2s cap"
+            );
+            assert!(cue.end >= cue.start);
+        }
+        // Sub-cues stay contiguous.
+        for pair in cues.windows(2) {
+            assert!((pair[0].end - pair[1].start).abs() < 1e-9);
+        }
+    }
+
+    #[test]
     fn empty_and_zero_duration_segments_are_skipped() {
         let cues = segments_to_cues(
             &[
@@ -561,6 +661,35 @@ mod tests {
             .validate(),
             Err(SubtitleError::InvalidColor("nope".to_string()))
         );
+        assert!(SubtitleStyle::default().validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_font_with_comma_newline_or_blank() {
+        assert!(matches!(
+            SubtitleStyle {
+                font: "Arial, sans-serif".to_string(),
+                ..SubtitleStyle::default()
+            }
+            .validate(),
+            Err(SubtitleError::InvalidFont(_))
+        ));
+        assert!(matches!(
+            SubtitleStyle {
+                font: "Bad\nName".to_string(),
+                ..SubtitleStyle::default()
+            }
+            .validate(),
+            Err(SubtitleError::InvalidFont(_))
+        ));
+        assert!(matches!(
+            SubtitleStyle {
+                font: "  ".to_string(),
+                ..SubtitleStyle::default()
+            }
+            .validate(),
+            Err(SubtitleError::InvalidFont(_))
+        ));
         assert!(SubtitleStyle::default().validate().is_ok());
     }
 

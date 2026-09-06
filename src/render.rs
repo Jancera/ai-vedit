@@ -213,15 +213,19 @@ pub fn mux_audio_command(video_path: &Path, audio_path: &Path, output_path: &Pat
     ]
 }
 
-/// Escapes a path for use as the value of a `subtitles=` filter inside an
-/// ffmpeg `-vf` filtergraph, where `\`, `:` and `'` are significant.
+/// Escapes a path so it can sit *inside single quotes* as the `filename`
+/// of a `subtitles=` filter in an ffmpeg `-vf` filtergraph. Escapes, in
+/// order, `\` -> `\\`, `'` -> `\'`, then `:` -> `\:`. Inside the quotes
+/// `,` `;` `[` `]` are literal and need no escaping; `:` still must be
+/// backslash-escaped because the filter's own option parser splits on it,
+/// and `'`/`\` are the filtergraph quoting metacharacters.
 pub fn escape_filter_path(path: &Path) -> String {
     let mut out = String::new();
     for ch in path.to_string_lossy().chars() {
         match ch {
             '\\' => out.push_str("\\\\"),
-            ':' => out.push_str("\\:"),
             '\'' => out.push_str("\\'"),
+            ':' => out.push_str("\\:"),
             other => out.push(other),
         }
     }
@@ -245,7 +249,7 @@ pub fn subtitle_burn_command(
         "-i".to_string(),
         audio_path.to_string_lossy().to_string(),
         "-vf".to_string(),
-        format!("subtitles={}", escape_filter_path(ass_path)),
+        format!("subtitles=filename='{}'", escape_filter_path(ass_path)),
         "-c:v".to_string(),
         "libx264".to_string(),
         "-preset".to_string(),
@@ -586,6 +590,29 @@ mod tests {
             escape_filter_path(Path::new("/tmp/o'k/subs.ass")),
             "/tmp/o\\'k/subs.ass"
         );
+        // Each backslash is doubled.
+        assert_eq!(
+            escape_filter_path(Path::new("/tmp/a\\b/subs.ass")),
+            "/tmp/a\\\\b/subs.ass"
+        );
+    }
+
+    #[test]
+    fn escape_filter_path_passes_comma_through_unchanged() {
+        // Inside the single-quoted filename form, `,` is literal.
+        assert_eq!(
+            escape_filter_path(Path::new("/tmp/v, 2026/subs.ass")),
+            "/tmp/v, 2026/subs.ass"
+        );
+
+        let args = subtitle_burn_command(
+            Path::new("concat.mp4"),
+            Path::new("/tmp/v, 2026/subs.ass"),
+            Path::new("script.mp3"),
+            Path::new("final.mp4"),
+        );
+        let vf = &args[args.iter().position(|a| a == "-vf").unwrap() + 1];
+        assert_eq!(vf, "subtitles=filename='/tmp/v, 2026/subs.ass'");
     }
 
     #[test]
@@ -607,7 +634,7 @@ mod tests {
                 "-i".to_string(),
                 "script.mp3".to_string(),
                 "-vf".to_string(),
-                "subtitles=/tmp/r/subs.ass".to_string(),
+                "subtitles=filename='/tmp/r/subs.ass'".to_string(),
                 "-c:v".to_string(),
                 "libx264".to_string(),
                 "-preset".to_string(),

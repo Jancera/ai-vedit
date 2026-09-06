@@ -51,6 +51,7 @@ pub fn load(path: &Path) -> Result<PlanFile, PlanFileError> {
 mod tests {
     use super::*;
     use crate::planner::Beat;
+    use crate::subtitles::{Cue, SubtitleStyle, Subtitles};
 
     fn sample_plan_file() -> PlanFile {
         PlanFile {
@@ -133,9 +134,36 @@ mod tests {
         let path = dir.path().join("plan.json");
         save(&path, &sample_plan_file()).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
+        let plan: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert!(
-            !text.contains("subtitles"),
+            plan.get("subtitles").is_none(),
             "plan.json must not carry a subtitles key when None: {text}"
         );
+    }
+
+    #[test]
+    fn save_then_load_round_trips_with_populated_subtitles() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("plan.json");
+        let mut plan_file = sample_plan_file();
+        plan_file.subtitles = Some(Subtitles {
+            enabled: true,
+            style: SubtitleStyle::default(),
+            cues: vec![Cue {
+                start: 0.0,
+                end: 2.0,
+                text: "hi".into(),
+            }],
+        });
+
+        save(&path, &plan_file).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            text.contains("\"subtitles\""),
+            "serialized plan should carry a subtitles key: {text}"
+        );
+
+        let loaded = load(&path).expect("expected plan file to load");
+        assert_eq!(loaded, plan_file);
     }
 }

@@ -528,8 +528,6 @@ fn plan_without_subtitles_flag_writes_no_subtitles_key() {
     cmd.assert().success();
 
     let plan_json = std::fs::read_to_string(dir.path().join("plan.json")).unwrap();
-    assert!(
-        !plan_json.contains("subtitles"),
-        "no --subtitles => no key: {plan_json}"
-    );
+    let plan: serde_json::Value = serde_json::from_str(&plan_json).unwrap();
+    assert!(plan.get("subtitles").is_none(), "{plan_json}");
 }
