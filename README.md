@@ -58,7 +58,7 @@ runs on any modern distro. Grab the latest from the
 [Releases page](../../releases/latest):
 
 ```bash
-ver=0.1.0   # set to the release you want
+ver=0.2.0   # set to the release you want
 base="ai-vedit-${ver}-x86_64-unknown-linux-musl"
 
 curl -LO "https://github.com/Jancera/ai-vedit/releases/download/v${ver}/${base}.tar.gz"
