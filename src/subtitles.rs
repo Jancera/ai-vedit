@@ -272,7 +272,6 @@ impl SubtitleStyle {
 
 /// Renders cues + style into a complete ASS document. A fixed 2px opaque
 /// black outline is always applied. Validates the style first.
-#[allow(dead_code)]
 pub fn cues_to_ass(
     cues: &[Cue],
     style: &SubtitleStyle,

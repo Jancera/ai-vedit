@@ -215,7 +215,6 @@ pub fn mux_audio_command(video_path: &Path, audio_path: &Path, output_path: &Pat
 
 /// Escapes a path for use as the value of a `subtitles=` filter inside an
 /// ffmpeg `-vf` filtergraph, where `\`, `:` and `'` are significant.
-#[allow(dead_code)]
 pub fn escape_filter_path(path: &Path) -> String {
     let mut out = String::new();
     for ch in path.to_string_lossy().chars() {
@@ -232,7 +231,6 @@ pub fn escape_filter_path(path: &Path) -> String {
 /// One ffmpeg pass that burns an ASS subtitle file into `video_path` and
 /// muxes `audio_path`, re-encoding the video (libx264). Used instead of
 /// [`mux_audio_command`] when the plan carries enabled subtitles.
-#[allow(dead_code)]
 pub fn subtitle_burn_command(
     video_path: &Path,
     ass_path: &Path,

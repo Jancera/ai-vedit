@@ -316,11 +316,56 @@ fn run_render(args: RenderArgs) {
         std::process::exit(1);
     }
 
-    println!("overlaying narration audio...");
-    let mux_args = render::mux_audio_command(&concat_path, &plan_file.audio_path, &args.out);
-    if let Err(e) = render::run_ffmpeg(&mux_args) {
-        eprintln!("error: {e}");
-        std::process::exit(1);
+    let burn = plan_file
+        .subtitles
+        .as_ref()
+        .filter(|s| s.enabled && !s.cues.is_empty());
+
+    match burn {
+        Some(subs) => {
+            let ass = match subtitles::cues_to_ass(&subs.cues, &subs.style, resolution) {
+                Ok(a) => a,
+                Err(e) => {
+                    eprintln!("error: invalid subtitle style: {e}");
+                    std::process::exit(1);
+                }
+            };
+            let ass_path = tmp_dir.join("subs.ass");
+            if let Err(e) = std::fs::write(&ass_path, ass) {
+                eprintln!("error: cannot write subtitle file {ass_path:?}: {e}");
+                std::process::exit(1);
+            }
+            println!("burning subtitles and overlaying narration audio...");
+            let burn_args = render::subtitle_burn_command(
+                &concat_path,
+                &ass_path,
+                &plan_file.audio_path,
+                &args.out,
+            );
+            if let Err(e) = render::run_ffmpeg(&burn_args) {
+                eprintln!("error: {e}");
+                std::process::exit(1);
+            }
+        }
+        None => {
+            if plan_file
+                .subtitles
+                .as_ref()
+                .is_some_and(|s| s.enabled && s.cues.is_empty())
+            {
+                eprintln!(
+                    "warning: subtitles enabled in the plan but it has no cues; \
+                     rendering without them"
+                );
+            }
+            println!("overlaying narration audio...");
+            let mux_args =
+                render::mux_audio_command(&concat_path, &plan_file.audio_path, &args.out);
+            if let Err(e) = render::run_ffmpeg(&mux_args) {
+                eprintln!("error: {e}");
+                std::process::exit(1);
+            }
+        }
     }
 
     if let Err(e) = std::fs::remove_dir_all(tmp_dir) {
