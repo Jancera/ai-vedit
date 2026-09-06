@@ -1,4 +1,5 @@
 use assert_cmd::Command;
+use predicates::prelude::*;
 use std::path::Path;
 
 fn ffmpeg_available() -> bool {
@@ -332,7 +333,10 @@ fn plan_with_subtitles_block_renders_end_to_end() {
     ]);
     plan_cmd.env("OPENAI_API_KEY", "test-key");
     plan_cmd.env("AI_VEDIT_OPENAI_BASE_URL", server.url());
-    plan_cmd.assert().success();
+    plan_cmd
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("cues generated"));
 
     let plan_json = std::fs::read_to_string(dir.path().join("plan.json")).unwrap();
     assert!(
@@ -350,7 +354,12 @@ fn plan_with_subtitles_block_renders_end_to_end() {
         "--out",
         output_path.to_str().unwrap(),
     ]);
-    render_cmd.assert().success();
+    render_cmd
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "burning subtitles and overlaying narration audio...",
+        ));
 
     let probe_output = std::process::Command::new("ffprobe")
         .args([
