@@ -129,10 +129,40 @@ fn run_plan(args: PlanArgs) {
         }
     };
 
+    let subtitles = if args.subtitles {
+        let style = subtitles::SubtitleStyle::default();
+        let cues = subtitles::segments_to_cues(
+            &transcript.segments,
+            style.max_chars_per_line,
+            style.max_lines,
+            style.max_duration,
+        );
+        if cues.is_empty() {
+            eprintln!(
+                "warning: --subtitles given but the transcript has no usable segments; \
+                 no subtitle block written"
+            );
+            None
+        } else {
+            println!(
+                "subtitles: {} cues generated (edit plan.json to restyle or set \
+                 \"enabled\": false)",
+                cues.len()
+            );
+            Some(subtitles::Subtitles {
+                enabled: true,
+                style,
+                cues,
+            })
+        }
+    } else {
+        None
+    };
+
     let plan_file = PlanFile {
         audio_path: args.audio.clone(),
         beats: plan.beats,
-        subtitles: None,
+        subtitles,
     };
 
     let plan_path = std::path::Path::new("plan.json");

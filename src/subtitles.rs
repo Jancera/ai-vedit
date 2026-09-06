@@ -69,7 +69,6 @@ impl Default for SubtitleStyle {
 /// `max_chars_per_line * max_lines` is the soft character target per cue.
 /// When `max_duration` is `Some(limit > 0.0)`, extra splits are forced so
 /// no cue spans more than `limit` seconds.
-#[allow(dead_code)]
 pub fn segments_to_cues(
     segments: &[Segment],
     max_chars_per_line: u32,
@@ -131,7 +130,6 @@ pub fn segments_to_cues(
 /// contiguous groups whose sizes differ by at most one word. Never
 /// splits a word. Returns fewer than `n` groups only when there are
 /// fewer than `n` words.
-#[allow(dead_code)]
 fn split_into_chunks(text: &str, n: usize) -> Vec<String> {
     let words: Vec<&str> = text.split_whitespace().collect();
     if words.is_empty() {

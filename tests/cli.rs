@@ -482,3 +482,54 @@ fn plan_warns_when_transcript_duration_is_unknown() {
         "warning: transcript has no known duration",
     ));
 }
+
+#[test]
+fn plan_with_subtitles_flag_embeds_a_block() {
+    let dir = tempfile::tempdir().unwrap();
+    let audio_path = write_fixture_audio(dir.path());
+    let mut server = mockito::Server::new();
+    let _mock = mock_successful_transcription(&mut server);
+    let _plan_mock = mock_successful_plan(&mut server);
+
+    let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
+    cmd.current_dir(dir.path());
+    cmd.args([
+        "plan",
+        "--audio",
+        audio_path.to_str().unwrap(),
+        "--subtitles",
+    ]);
+    cmd.env("OPENAI_API_KEY", "test-key");
+    cmd.env("AI_VEDIT_OPENAI_BASE_URL", server.url());
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("cues generated"));
+
+    let plan_json = std::fs::read_to_string(dir.path().join("plan.json")).unwrap();
+    let plan: serde_json::Value = serde_json::from_str(&plan_json).unwrap();
+    assert_eq!(plan["subtitles"]["enabled"], true);
+    assert!(!plan["subtitles"]["cues"].as_array().unwrap().is_empty());
+    assert_eq!(plan["subtitles"]["style"]["font"], "DejaVu Sans");
+}
+
+#[test]
+fn plan_without_subtitles_flag_writes_no_subtitles_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let audio_path = write_fixture_audio(dir.path());
+    let mut server = mockito::Server::new();
+    let _mock = mock_successful_transcription(&mut server);
+    let _plan_mock = mock_successful_plan(&mut server);
+
+    let mut cmd = Command::cargo_bin("ai-vedit").unwrap();
+    cmd.current_dir(dir.path());
+    cmd.args(["plan", "--audio", audio_path.to_str().unwrap()]);
+    cmd.env("OPENAI_API_KEY", "test-key");
+    cmd.env("AI_VEDIT_OPENAI_BASE_URL", server.url());
+    cmd.assert().success();
+
+    let plan_json = std::fs::read_to_string(dir.path().join("plan.json")).unwrap();
+    assert!(
+        !plan_json.contains("subtitles"),
+        "no --subtitles => no key: {plan_json}"
+    );
+}

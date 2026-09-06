@@ -35,6 +35,10 @@ pub struct PlanArgs {
     /// Minimum duration (seconds) each beat should have; shorter beats are merged with neighbors
     #[arg(long, default_value = "5.0")]
     pub min_beat_duration: f64,
+
+    /// Generate burned-in subtitles from the transcript and embed them in plan.json
+    #[arg(long)]
+    pub subtitles: bool,
 }
 
 #[derive(Args, Debug)]
