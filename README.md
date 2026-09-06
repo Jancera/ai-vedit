@@ -58,7 +58,7 @@ runs on any modern distro. Grab the latest from the
 [Releases page](../../releases/latest):
 
 ```bash
-ver=0.1.0   # set to the release you want
+ver=0.2.0   # set to the release you want
 base="ai-vedit-${ver}-x86_64-unknown-linux-musl"
 
 curl -LO "https://github.com/Jancera/ai-vedit/releases/download/v${ver}/${base}.tar.gz"
@@ -143,7 +143,7 @@ assets/
 ### `plan`
 
 ```
-ai-vedit plan --audio script.mp3 [--assets ./assets] [--min-beat-duration 5]
+ai-vedit plan --audio script.mp3 [--assets ./assets] [--min-beat-duration 5] [--subtitles]
 ```
 
 - Transcribes the audio (transcript is cached to disk at
@@ -155,6 +155,9 @@ ai-vedit plan --audio script.mp3 [--assets ./assets] [--min-beat-duration 5]
   rendering.
 - `plan.json` is written to the current working directory and is overwritten on
   each run (there is no `--out` flag for `plan` yet).
+- `--subtitles`: generate captions from the transcript and embed a `subtitles` block
+  (with `enabled: true`, a default style, and the generated cues) into `plan.json`.
+  Omit the flag and `plan.json` is unchanged.
 
 ### `render`
 
@@ -179,6 +182,42 @@ ai-vedit render --plan plan.json [--assets ./assets] [--out output.mp4] [--aspec
 - `OPENAI_API_KEY` — required, read from the environment.
 - Default output aspect ratio: **16:9 (1920x1080)**, overridable via `--aspect`.
 
+## Subtitles
+
+Run `ai-vedit plan --subtitles` to embed a `subtitles` block in `plan.json`:
+
+```json
+"subtitles": {
+  "enabled": true,
+  "style": {
+    "font": "DejaVu Sans",
+    "font_size": 48,
+    "primary_color": "#FFFFFF",
+    "bold": false,
+    "italic": false,
+    "uppercase": false,
+    "position": "bottom",
+    "margin_vertical": 60,
+    "max_chars_per_line": 42,
+    "max_lines": 2,
+    "max_duration": null
+  },
+  "cues": [
+    { "start": 0.0, "end": 2.4, "text": "First caption" }
+  ]
+}
+```
+
+- Edit `cues[].text` to fix transcription errors; edit `style` to restyle.
+- Set `"enabled": false` to skip burning without re-running `plan`.
+- `font` is a fontconfig **family name** (e.g. `"DejaVu Sans"`). An unknown
+  family silently falls back to a default face.
+- `position` is `bottom`, `middle`, or `top`. `max_duration` is an optional
+  per-cue on-screen cap in seconds (`null` = no cap).
+- A thin black outline is always applied for legibility.
+- When subtitles are enabled, `render` re-encodes the video (libx264) to
+  burn them in, instead of the usual stream copy — the render is slower.
+
 ## Error handling
 
 - A category with no assets at render time fails with a message naming the category
@@ -201,7 +240,8 @@ all beat clips, and overlays the narration audio. M5 added case/whitespace-
 tolerant category matching, symlink-following asset/category discovery,
 clearer error messages, a real end-to-end integration test, and this
 Quickstart. The full `plan` → `render` pipeline is functionally complete
-end to end, completing the MVP (M0-M5). Anything further is tracked under
+end to end, completing the MVP (M0-M5). Burned-in subtitles are supported
+via `plan --subtitles`. Anything further is tracked under
 ["Ideas beyond the MVP"](ROADMAP.md#ideas-beyond-the-mvp-not-committed-yet)
 in [ROADMAP.md](ROADMAP.md). See [CONTRIBUTING.md](CONTRIBUTING.md) if
 you'd like to help.

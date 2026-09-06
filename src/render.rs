@@ -213,6 +213,62 @@ pub fn mux_audio_command(video_path: &Path, audio_path: &Path, output_path: &Pat
     ]
 }
 
+/// Escapes a path so it can sit *inside single quotes* as the `filename`
+/// of a `subtitles=` filter in an ffmpeg `-vf` filtergraph. Escapes, in
+/// order, `\` -> `\\`, `'` -> `\'`, then `:` -> `\:`. Inside the quotes
+/// `,` `;` `[` `]` are literal and need no escaping; `:` still must be
+/// backslash-escaped because the filter's own option parser splits on it,
+/// and `'`/`\` are the filtergraph quoting metacharacters.
+pub fn escape_filter_path(path: &Path) -> String {
+    let mut out = String::new();
+    for ch in path.to_string_lossy().chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '\'' => out.push_str("\\'"),
+            ':' => out.push_str("\\:"),
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+/// One ffmpeg pass that burns an ASS subtitle file into `video_path` and
+/// muxes `audio_path`, re-encoding the video (libx264). Used instead of
+/// [`mux_audio_command`] when the plan carries enabled subtitles.
+pub fn subtitle_burn_command(
+    video_path: &Path,
+    ass_path: &Path,
+    audio_path: &Path,
+    output_path: &Path,
+) -> Vec<String> {
+    vec![
+        "-hide_banner".to_string(),
+        "-y".to_string(),
+        "-i".to_string(),
+        video_path.to_string_lossy().to_string(),
+        "-i".to_string(),
+        audio_path.to_string_lossy().to_string(),
+        "-vf".to_string(),
+        format!("subtitles=filename='{}'", escape_filter_path(ass_path)),
+        "-c:v".to_string(),
+        "libx264".to_string(),
+        "-preset".to_string(),
+        "medium".to_string(),
+        "-crf".to_string(),
+        "18".to_string(),
+        "-pix_fmt".to_string(),
+        "yuv420p".to_string(),
+        "-c:a".to_string(),
+        "aac".to_string(),
+        "-map".to_string(),
+        "0:v".to_string(),
+        "-map".to_string(),
+        "1:a".to_string(),
+        "-shortest".to_string(),
+        output_path.to_string_lossy().to_string(),
+    ]
+}
+
 #[derive(Debug)]
 pub enum RenderError {
     Ffmpeg {
@@ -512,6 +568,81 @@ mod tests {
                 "audio.mp3".to_string(),
                 "-c:v".to_string(),
                 "copy".to_string(),
+                "-c:a".to_string(),
+                "aac".to_string(),
+                "-map".to_string(),
+                "0:v".to_string(),
+                "-map".to_string(),
+                "1:a".to_string(),
+                "-shortest".to_string(),
+                "final.mp4".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn escape_filter_path_escapes_colon_backslash_and_quote() {
+        assert_eq!(
+            escape_filter_path(Path::new("/tmp/a:b/subs.ass")),
+            "/tmp/a\\:b/subs.ass"
+        );
+        assert_eq!(
+            escape_filter_path(Path::new("/tmp/o'k/subs.ass")),
+            "/tmp/o\\'k/subs.ass"
+        );
+        // Each backslash is doubled.
+        assert_eq!(
+            escape_filter_path(Path::new("/tmp/a\\b/subs.ass")),
+            "/tmp/a\\\\b/subs.ass"
+        );
+    }
+
+    #[test]
+    fn escape_filter_path_passes_comma_through_unchanged() {
+        // Inside the single-quoted filename form, `,` is literal.
+        assert_eq!(
+            escape_filter_path(Path::new("/tmp/v, 2026/subs.ass")),
+            "/tmp/v, 2026/subs.ass"
+        );
+
+        let args = subtitle_burn_command(
+            Path::new("concat.mp4"),
+            Path::new("/tmp/v, 2026/subs.ass"),
+            Path::new("script.mp3"),
+            Path::new("final.mp4"),
+        );
+        let vf = &args[args.iter().position(|a| a == "-vf").unwrap() + 1];
+        assert_eq!(vf, "subtitles=filename='/tmp/v, 2026/subs.ass'");
+    }
+
+    #[test]
+    fn subtitle_burn_command_builds_expected_args() {
+        let args = subtitle_burn_command(
+            Path::new("concat.mp4"),
+            Path::new("/tmp/r/subs.ass"),
+            Path::new("script.mp3"),
+            Path::new("final.mp4"),
+        );
+
+        assert_eq!(
+            args,
+            vec![
+                "-hide_banner".to_string(),
+                "-y".to_string(),
+                "-i".to_string(),
+                "concat.mp4".to_string(),
+                "-i".to_string(),
+                "script.mp3".to_string(),
+                "-vf".to_string(),
+                "subtitles=filename='/tmp/r/subs.ass'".to_string(),
+                "-c:v".to_string(),
+                "libx264".to_string(),
+                "-preset".to_string(),
+                "medium".to_string(),
+                "-crf".to_string(),
+                "18".to_string(),
+                "-pix_fmt".to_string(),
+                "yuv420p".to_string(),
                 "-c:a".to_string(),
                 "aac".to_string(),
                 "-map".to_string(),

@@ -1,4 +1,5 @@
 use assert_cmd::Command;
+use predicates::prelude::*;
 use std::path::Path;
 
 fn ffmpeg_available() -> bool {
@@ -288,5 +289,97 @@ fn oversized_same_aspect_assets_render_at_output_resolution() {
         video_dimensions(&output_path),
         "1920,1080",
         "expected the scaled-down assets to render at the 16:9 output resolution"
+    );
+}
+
+#[test]
+#[ignore]
+fn plan_with_subtitles_block_renders_end_to_end() {
+    if !ffmpeg_available() {
+        panic!(
+            "ffmpeg not found on PATH — this test requires it; only run with \
+             `cargo test -- --ignored` when ffmpeg is installed"
+        );
+    }
+    if !ffprobe_available() {
+        panic!("ffprobe not found on PATH — this test requires it (normally bundled with ffmpeg)");
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+
+    let audio_path = dir.path().join("script.mp3");
+    generate_fixture_audio(&audio_path);
+
+    let stills_dir = dir.path().join("assets").join("stills");
+    let clips_dir = dir.path().join("assets").join("clips");
+    std::fs::create_dir_all(&stills_dir).unwrap();
+    std::fs::create_dir_all(&clips_dir).unwrap();
+    generate_fixture_image(&stills_dir.join("photo.jpg"));
+    generate_fixture_video(&clips_dir.join("clip.mp4"));
+
+    let mut server = mockito::Server::new();
+    let _transcription_mock = mock_successful_transcription(&mut server);
+    let _plan_mock = mock_successful_plan(&mut server);
+
+    let mut plan_cmd = Command::cargo_bin("ai-vedit").unwrap();
+    plan_cmd.current_dir(dir.path());
+    plan_cmd.args([
+        "plan",
+        "--audio",
+        audio_path.to_str().unwrap(),
+        "--min-beat-duration",
+        "1",
+        "--subtitles",
+    ]);
+    plan_cmd.env("OPENAI_API_KEY", "test-key");
+    plan_cmd.env("AI_VEDIT_OPENAI_BASE_URL", server.url());
+    plan_cmd
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("cues generated"));
+
+    let plan_json = std::fs::read_to_string(dir.path().join("plan.json")).unwrap();
+    assert!(
+        plan_json.contains("\"subtitles\""),
+        "expected a subtitles block in plan.json"
+    );
+
+    let output_path = dir.path().join("final.mp4");
+    let mut render_cmd = Command::cargo_bin("ai-vedit").unwrap();
+    render_cmd.current_dir(dir.path());
+    render_cmd.args([
+        "render",
+        "--plan",
+        "plan.json",
+        "--out",
+        output_path.to_str().unwrap(),
+    ]);
+    render_cmd
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "burning subtitles and overlaying narration audio...",
+        ));
+
+    let probe_output = std::process::Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "stream=codec_type",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(&output_path)
+        .output()
+        .expect("failed to run ffprobe on output video");
+    let stream_types = String::from_utf8_lossy(&probe_output.stdout);
+    assert!(
+        stream_types.contains("video"),
+        "expected a video stream: {stream_types}"
+    );
+    assert!(
+        stream_types.contains("audio"),
+        "expected an audio stream: {stream_types}"
     );
 }
