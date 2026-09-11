@@ -66,19 +66,24 @@ impl Default for SubtitleStyle {
 /// proportion to each chunk's character count. Cues within a segment are
 /// contiguous and non-overlapping; gaps between segments are preserved.
 ///
-/// `max_chars_per_line * max_lines` is the soft character target per cue.
-/// When `max_duration` is `Some(limit > 0.0)`, extra splits are forced so
-/// no emitted cue spans more than `limit` seconds: chunks are first sized
-/// to target `limit`, then any chunk that would still exceed it after
-/// character-proportional timing (e.g. a single very long word) is divided
-/// into equal-time sub-cues with its words apportioned across them.
+/// Each cue holds the largest run of whole words that greedy word-wrap
+/// (the same rule [`wrap_text`] renders with) fits into `max_lines` lines
+/// of at most `max_chars_per_line` characters; leftover words spill into
+/// further cues. A single word longer than `max_chars_per_line` forms its
+/// own cue and overflows on screen — that is unavoidable without breaking
+/// the word.
+///
+/// When `max_duration` is `Some(limit > 0.0)`, any cue whose
+/// character-proportional span still exceeds `limit` is divided into
+/// equal-time sub-cues with its words apportioned across them.
 pub fn segments_to_cues(
     segments: &[Segment],
     max_chars_per_line: u32,
     max_lines: u32,
     max_duration: Option<f64>,
 ) -> Vec<Cue> {
-    let target = (max_chars_per_line.max(1) as usize) * (max_lines.max(1) as usize);
+    let max_chars = max_chars_per_line.max(1) as usize;
+    let max_lines = max_lines.max(1) as usize;
     let mut cues = Vec::new();
 
     for segment in segments {
@@ -91,38 +96,96 @@ pub fn segments_to_cues(
             continue;
         }
 
-        let by_chars = text.chars().count().div_ceil(target).max(1);
-        let by_time = match max_duration {
-            Some(limit) if limit > 0.0 => (duration / limit).ceil() as usize,
-            _ => 1,
-        };
-        let n = by_chars.max(by_time).max(1);
-
-        let chunks = split_into_chunks(text, n);
-        if chunks.is_empty() {
+        let words: Vec<&str> = text.split_whitespace().collect();
+        let mut groups: Vec<String> = Vec::new();
+        let mut w = 0;
+        while w < words.len() {
+            let take = words_per_cue(&words[w..], max_chars, max_lines).max(1);
+            groups.push(words[w..w + take].join(" "));
+            w += take;
+        }
+        if groups.is_empty() {
             continue;
         }
-        let total_chars: usize = chunks
+        let total_chars: usize = groups
             .iter()
-            .map(|c| c.chars().count())
+            .map(|g| g.chars().count())
             .sum::<usize>()
             .max(1);
 
         let mut cursor = segment.start;
-        let last = chunks.len() - 1;
-        for (i, chunk) in chunks.iter().enumerate() {
+        let last = groups.len() - 1;
+        for (i, group) in groups.iter().enumerate() {
             let cue_end = if i == last {
                 segment.end
             } else {
-                let frac = chunk.chars().count() as f64 / total_chars as f64;
+                let frac = group.chars().count() as f64 / total_chars as f64;
                 cursor + duration * frac
             };
-            push_bounded_cues(&mut cues, cursor, cue_end, chunk, max_duration);
+            push_bounded_cues(&mut cues, cursor, cue_end, group, max_duration);
             cursor = cue_end;
         }
     }
 
     cues
+}
+
+/// Greatest number of leading `words` that [`greedy_wrap`] packs into at
+/// most `max_lines` lines of width `max_chars`. Always returns at least 1
+/// for a non-empty slice — a lone over-long word still forms a group so
+/// splitting terminates.
+fn words_per_cue(words: &[&str], max_chars: usize, max_lines: usize) -> usize {
+    let max_lines = max_lines.max(1);
+    if words.is_empty() {
+        return 0;
+    }
+    // `greedy_wrap` line count is non-decreasing as the prefix grows, so
+    // binary-search the largest prefix that still fits.
+    let (mut lo, mut hi) = (1usize, words.len());
+    while lo < hi {
+        let mid = (lo + hi).div_ceil(2);
+        if greedy_wrap(&words[..mid], max_chars).len() <= max_lines {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    lo
+}
+
+/// Greedily packs `words` into lines no wider than `max_chars`: a new line
+/// starts when appending the next word (plus a separating space) would
+/// exceed `max_chars`. A word longer than `max_chars` still takes a line
+/// of its own. This is the single wrap rule shared by cue splitting and
+/// rendering.
+fn greedy_wrap<'a>(words: &[&'a str], max_chars: usize) -> Vec<Vec<&'a str>> {
+    let max_chars = max_chars.max(1);
+    let mut lines: Vec<Vec<&str>> = Vec::new();
+    let mut current: Vec<&str> = Vec::new();
+    let mut current_len = 0usize;
+
+    for &word in words {
+        let word_len = word.chars().count();
+        let with_word = if current.is_empty() {
+            word_len
+        } else {
+            current_len + 1 + word_len
+        };
+        if !current.is_empty() && with_word > max_chars {
+            lines.push(std::mem::take(&mut current));
+            current_len = 0;
+        }
+        if current.is_empty() {
+            current_len = word_len;
+        } else {
+            current_len += 1 + word_len;
+        }
+        current.push(word);
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    lines
 }
 
 /// Pushes `text` spanning `[start, end]` onto `cues`. When `max_duration`
@@ -281,46 +344,27 @@ fn escape_ass_text(text: &str) -> String {
 /// `max_chars`; any remaining words are appended to the final line
 /// (overflow beats truncation). Lines are joined with a literal `\N`.
 fn wrap_text(text: &str, max_chars: usize, max_lines: usize) -> String {
-    let max_chars = max_chars.max(1);
     let max_lines = max_lines.max(1);
     let words: Vec<&str> = text.split_whitespace().collect();
     if words.is_empty() {
         return String::new();
     }
 
-    let mut lines: Vec<String> = Vec::new();
-    let mut current = String::new();
+    let mut lines = greedy_wrap(&words, max_chars);
+    // `segments_to_cues` sizes cues so this rarely fires; when it does
+    // (e.g. a lone word wider than `max_chars`), fold everything from the
+    // last kept line onward into one overflowing line rather than drop it.
+    if lines.len() > max_lines {
+        let tail: Vec<&str> = lines[max_lines - 1..].concat();
+        lines.truncate(max_lines - 1);
+        lines.push(tail);
+    }
 
-    for word in words {
-        let on_last_line = lines.len() + 1 >= max_lines;
-        if on_last_line {
-            if current.is_empty() {
-                current.push_str(word);
-            } else {
-                current.push(' ');
-                current.push_str(word);
-            }
-            continue;
-        }
-        let would_be = if current.is_empty() {
-            word.chars().count()
-        } else {
-            current.chars().count() + 1 + word.chars().count()
-        };
-        if !current.is_empty() && would_be > max_chars {
-            lines.push(std::mem::take(&mut current));
-            current.push_str(word);
-        } else if current.is_empty() {
-            current.push_str(word);
-        } else {
-            current.push(' ');
-            current.push_str(word);
-        }
-    }
-    if !current.is_empty() {
-        lines.push(current);
-    }
-    lines.join("\\N")
+    lines
+        .iter()
+        .map(|line| line.join(" "))
+        .collect::<Vec<_>>()
+        .join("\\N")
 }
 
 impl SubtitleStyle {
@@ -563,6 +607,76 @@ mod tests {
         let cues = segments_to_cues(&[seg(0.0, 2.0, "supercalifragilistic")], 5, 1, None);
         assert_eq!(cues.len(), 1);
         assert_eq!(cues[0].text, "supercalifragilistic");
+    }
+
+    /// Every emitted cue must wrap into at most `max_lines` lines, each no
+    /// wider than `max_chars_per_line` — a lone word longer than the limit
+    /// is the only allowed exception. Greedy word-wrap fits fewer chars
+    /// than `max_chars_per_line * max_lines`, so a segment under that loose
+    /// product can still overflow; this pins the real guarantee, plus
+    /// contiguous timing and no lost words.
+    #[test]
+    fn every_cue_wraps_within_max_lines_and_max_chars() {
+        let cases: &[(&str, u32, u32)] = &[
+            // equal-length words under the loose 10*2 char product that
+            // still cannot pack into two 10-char lines
+            ("aaaaaa bbbbbb cccccc ffffff gggggg", 10, 2),
+            // a realistic long sentence at the default 42 / 2 style
+            (
+                "The quarterly revenue figures exceeded every internal \
+                 projection despite the supply chain disruptions that \
+                 dominated the first half of the fiscal year",
+                42,
+                2,
+            ),
+            // a single word wider than the limit: its own cue, allowed to
+            // overflow, but the surrounding words must still wrap cleanly
+            ("intro antidisestablishmentarianism outro word", 12, 1),
+        ];
+
+        for &(text, max_chars, max_lines) in cases {
+            let cues = segments_to_cues(&[seg(0.0, 6.0, text)], max_chars, max_lines, None);
+            assert!(!cues.is_empty(), "no cues for {text:?}");
+
+            for cue in &cues {
+                let wrapped = wrap_text(&cue.text, max_chars as usize, max_lines as usize);
+                let lines: Vec<&str> = wrapped.split("\\N").collect();
+                assert!(
+                    lines.len() <= max_lines as usize,
+                    "cue {:?} wraps to {} lines (> {max_lines})",
+                    cue.text,
+                    lines.len()
+                );
+                for line in lines {
+                    let single_word = !line.trim().contains(' ');
+                    assert!(
+                        line.chars().count() <= max_chars as usize || single_word,
+                        "cue {:?} produced a {}-char line {line:?} (> {max_chars})",
+                        cue.text,
+                        line.chars().count()
+                    );
+                }
+            }
+
+            assert_eq!(cues.first().unwrap().start, 0.0);
+            assert_eq!(cues.last().unwrap().end, 6.0);
+            for pair in cues.windows(2) {
+                assert!(
+                    (pair[0].end - pair[1].start).abs() < 1e-9,
+                    "cues not contiguous for {text:?}"
+                );
+            }
+            let rejoined = cues
+                .iter()
+                .map(|c| c.text.clone())
+                .collect::<Vec<_>>()
+                .join(" ");
+            assert_eq!(
+                rejoined.split_whitespace().collect::<Vec<_>>(),
+                text.split_whitespace().collect::<Vec<_>>(),
+                "words lost or reordered for {text:?}"
+            );
+        }
     }
 
     #[test]
