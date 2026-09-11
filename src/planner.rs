@@ -146,6 +146,8 @@ fn build_request_body(
         (e.g. a specific place, object, action, or concept) and choose a short, kebab-case \
         category name that names that subject. Beats about different subjects should usually \
         get different categories \u{2014} do not default every beat to the same category. \
+        Never use the same category for consecutive beats. Always transition to a different \
+        category for the next beat. \
         \n\nexisting_categories lists category names already in use; reuse one only when it is \
         a genuine match for the beat's subject, not merely because it already exists \u{2014} \
         it is there to help you avoid creating a near-duplicate of a category that already \
