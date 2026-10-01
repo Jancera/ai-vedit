@@ -24,23 +24,77 @@ script.mp3 --> transcribe --> agent plans shot list --> user fills asset categor
    duration, and stitches everything together with ffmpeg over the original narration
    audio.
 
+## Install
+
+### ffmpeg (required at runtime)
+
+`ai-vedit` shells out to [`ffmpeg`](https://ffmpeg.org/) and `ffprobe`, so both
+must be on your `PATH` no matter how you install `ai-vedit` itself.
+
+```bash
+# Debian / Ubuntu
+sudo apt install ffmpeg
+
+# Fedora
+sudo dnf install ffmpeg          # or ffmpeg-free from the default repos
+
+# Arch
+sudo pacman -S ffmpeg
+```
+
+If your distro ships an old ffmpeg (or none), grab a static build from
+[johnvansickle.com/ffmpeg](https://johnvansickle.com/ffmpeg/) or
+[ffmpeg.org/download.html](https://ffmpeg.org/download.html) and put `ffmpeg`
+and `ffprobe` somewhere on your `PATH`. Verify with:
+
+```bash
+ffmpeg -version && ffprobe -version
+```
+
+### Prebuilt binary (x86_64 Linux)
+
+Each tagged release publishes a statically linked `x86_64` Linux binary that
+runs on any modern distro. Grab the latest from the
+[Releases page](../../releases/latest):
+
+```bash
+ver=0.2.0   # set to the release you want
+base="ai-vedit-${ver}-x86_64-unknown-linux-musl"
+
+curl -LO "https://github.com/Jancera/ai-vedit/releases/download/v${ver}/${base}.tar.gz"
+curl -LO "https://github.com/Jancera/ai-vedit/releases/download/v${ver}/${base}.tar.gz.sha256"
+sha256sum -c "${base}.tar.gz.sha256"
+
+tar -xzf "${base}.tar.gz"
+install -Dm755 "${base}/ai-vedit" ~/.local/bin/ai-vedit
+# make sure ~/.local/bin is on your PATH
+ai-vedit --version
+```
+
+### From source
+
+Requires a stable Rust toolchain ([rustup](https://rustup.rs)):
+
+```bash
+cargo install --path .          # installs `ai-vedit` onto your PATH
+# or: cargo build --release     # produces target/release/ai-vedit
+```
+
 ## Quickstart
 
 Prerequisites:
 
-- [`ffmpeg`](https://ffmpeg.org/) installed and on your `PATH`.
-- The `ai-vedit` binary, built from source (no published binary yet):
-  `cargo build --release` produces `target/release/ai-vedit`, or run
-  `cargo install --path .` to put `ai-vedit` on your `PATH` so the commands
-  below work as shown.
+- `ai-vedit` installed (see [Install](#install) above) and `ffmpeg` on your `PATH`.
 - An `OPENAI_API_KEY` (used for transcription and planning, set below).
 
 ```bash
 export OPENAI_API_KEY=sk-...
 
 mkdir -p assets/general
-# add a few images/videos to assets/general/, or create category folders
-# like assets/city-broll/ ahead of time if you already know your beats
+# `ai-vedit plan` creates assets/ and a folder per planned category
+# automatically if they don't exist yet -- add images/videos to
+# assets/general/, or drop them into the category folders it created
+# for you, before running `ai-vedit render`
 
 ai-vedit plan --audio script.mp3
 # writes plan.json, prints a time-budget report, and lists any new
@@ -79,15 +133,17 @@ assets/
 - Supported asset types: images (`.jpg`, `.jpeg`, `.png`, `.webp`) and video (`.mp4`).
 - A reserved `general/` category acts as a fallback when no specific category fits a
   beat, or when the chosen category has no assets at all (empty or missing folder).
-- Within a category, assets are picked by simple rotation (round-robin): every file
-  is used once before any file repeats — no content-matching in the MVP.
+- Within a category, assets are drawn from a shuffled bag: the file list is shuffled
+  into a random order, then walked in order, reshuffling once every file has been used.
+  Every file is still used once before any file repeats, but the order (and which asset
+  lands on which beat) differs on each render. No content-matching in the MVP.
 
 ## CLI usage
 
 ### `plan`
 
 ```
-ai-vedit plan --audio script.mp3 [--assets ./assets] [--aspect 16:9|9:16]
+ai-vedit plan --audio script.mp3 [--assets ./assets] [--min-beat-duration 5] [--subtitles]
 ```
 
 - Transcribes the audio (transcript is cached to disk at
@@ -99,6 +155,9 @@ ai-vedit plan --audio script.mp3 [--assets ./assets] [--aspect 16:9|9:16]
   rendering.
 - `plan.json` is written to the current working directory and is overwritten on
   each run (there is no `--out` flag for `plan` yet).
+- `--subtitles`: generate captions from the transcript and embed a `subtitles` block
+  (with `enabled: true`, a default style, and the generated cues) into `plan.json`.
+  Omit the flag and `plan.json` is unchanged.
 
 ### `render`
 
@@ -110,6 +169,11 @@ ai-vedit render --plan plan.json [--assets ./assets] [--out output.mp4] [--aspec
   category has no assets, and erroring out at that beat if `general/` is also empty.
   - Images: held for the beat's duration with a Ken Burns (slow zoom/pan) effect.
   - Videos: trimmed to fit if longer than the beat, looped if shorter.
+- Fitting an asset to the frame:
+  - An asset larger than the output in both dimensions whose aspect ratio is within
+    1% of the output's is scaled down to the output resolution (no cropping).
+  - Otherwise the asset is placed at its native size — excess cropped from the
+    center, any shortfall padded with black.
 - Concatenates all beat clips, overlays the original narration audio, and encodes to
   the target resolution.
 
@@ -117,6 +181,42 @@ ai-vedit render --plan plan.json [--assets ./assets] [--out output.mp4] [--aspec
 
 - `OPENAI_API_KEY` — required, read from the environment.
 - Default output aspect ratio: **16:9 (1920x1080)**, overridable via `--aspect`.
+
+## Subtitles
+
+Run `ai-vedit plan --subtitles` to embed a `subtitles` block in `plan.json`:
+
+```json
+"subtitles": {
+  "enabled": true,
+  "style": {
+    "font": "DejaVu Sans",
+    "font_size": 48,
+    "primary_color": "#FFFFFF",
+    "bold": false,
+    "italic": false,
+    "uppercase": false,
+    "position": "bottom",
+    "margin_vertical": 60,
+    "max_chars_per_line": 42,
+    "max_lines": 2,
+    "max_duration": null
+  },
+  "cues": [
+    { "start": 0.0, "end": 2.4, "text": "First caption" }
+  ]
+}
+```
+
+- Edit `cues[].text` to fix transcription errors; edit `style` to restyle.
+- Set `"enabled": false` to skip burning without re-running `plan`.
+- `font` is a fontconfig **family name** (e.g. `"DejaVu Sans"`). An unknown
+  family silently falls back to a default face.
+- `position` is `bottom`, `middle`, or `top`. `max_duration` is an optional
+  per-cue on-screen cap in seconds (`null` = no cap).
+- A thin black outline is always applied for legibility.
+- When subtitles are enabled, `render` re-encodes the video (libx264) to
+  burn them in, instead of the usual stream copy — the render is slower.
 
 ## Error handling
 
@@ -133,14 +233,15 @@ and `render` subcommands parse arguments and validate config
 (caching the result locally), then segments the transcript into beats
 matched to asset categories via the OpenAI chat completions API, writes
 `plan.json`, and prints a per-category time-budget report. `render` wires
-up asset selection (file discovery + round-robin selection with `general/`
+up asset selection (file discovery + shuffled-bag selection with `general/`
 fallback) with an ffmpeg rendering pipeline: it generates a full video with
 a Ken Burns effect for images, loop-and-trim for video clips, concatenates
 all beat clips, and overlays the narration audio. M5 added case/whitespace-
 tolerant category matching, symlink-following asset/category discovery,
 clearer error messages, a real end-to-end integration test, and this
 Quickstart. The full `plan` → `render` pipeline is functionally complete
-end to end, completing the MVP (M0-M5). Anything further is tracked under
+end to end, completing the MVP (M0-M5). Burned-in subtitles are supported
+via `plan --subtitles`. Anything further is tracked under
 ["Ideas beyond the MVP"](ROADMAP.md#ideas-beyond-the-mvp-not-committed-yet)
 in [ROADMAP.md](ROADMAP.md). See [CONTRIBUTING.md](CONTRIBUTING.md) if
 you'd like to help.

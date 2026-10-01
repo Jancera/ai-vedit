@@ -3,14 +3,15 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::cli::AspectRatio;
 use crate::planner::Beat;
+use crate::subtitles::Subtitles;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PlanFile {
     pub audio_path: PathBuf,
-    pub aspect: AspectRatio,
     pub beats: Vec<Beat>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subtitles: Option<Subtitles>,
 }
 
 #[derive(Debug)]
@@ -49,20 +50,21 @@ pub fn load(path: &Path) -> Result<PlanFile, PlanFileError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::AspectRatio;
     use crate::planner::Beat;
+    use crate::subtitles::{Cue, SubtitleStyle, Subtitles};
 
     fn sample_plan_file() -> PlanFile {
         PlanFile {
             audio_path: "script.mp3".into(),
-            aspect: AspectRatio::Sixteen9,
             beats: vec![Beat {
                 start: 0.0,
                 end: 3.0,
+                duration: 3.0,
                 description: "City at night".to_string(),
                 category: "city-broll".to_string(),
                 is_new_category: false,
             }],
+            subtitles: None,
         }
     }
 
@@ -76,6 +78,31 @@ mod tests {
         let loaded = load(&path).expect("expected plan file to load");
 
         assert_eq!(loaded, plan_file);
+    }
+
+    #[test]
+    fn load_accepts_plan_without_aspect_field() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("plan.json");
+        std::fs::write(&path, r#"{"audio_path":"script.mp3","beats":[]}"#).unwrap();
+
+        let loaded = load(&path).expect("a plan without an aspect field should load");
+
+        assert_eq!(loaded.audio_path, PathBuf::from("script.mp3"));
+        assert!(loaded.beats.is_empty());
+    }
+
+    #[test]
+    fn load_ignores_legacy_aspect_field() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("plan.json");
+        std::fs::write(
+            &path,
+            r#"{"audio_path":"script.mp3","aspect":"Sixteen9","beats":[]}"#,
+        )
+        .unwrap();
+
+        load(&path).expect("a legacy plan carrying an aspect field should still load");
     }
 
     #[test]
@@ -99,5 +126,44 @@ mod tests {
             Err(PlanFileError::Json(_)) => {}
             other => panic!("expected Json error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn save_omits_subtitles_key_when_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("plan.json");
+        save(&path, &sample_plan_file()).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let plan: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert!(
+            plan.get("subtitles").is_none(),
+            "plan.json must not carry a subtitles key when None: {text}"
+        );
+    }
+
+    #[test]
+    fn save_then_load_round_trips_with_populated_subtitles() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("plan.json");
+        let mut plan_file = sample_plan_file();
+        plan_file.subtitles = Some(Subtitles {
+            enabled: true,
+            style: SubtitleStyle::default(),
+            cues: vec![Cue {
+                start: 0.0,
+                end: 2.0,
+                text: "hi".into(),
+            }],
+        });
+
+        save(&path, &plan_file).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            text.contains("\"subtitles\""),
+            "serialized plan should carry a subtitles key: {text}"
+        );
+
+        let loaded = load(&path).expect("expected plan file to load");
+        assert_eq!(loaded, plan_file);
     }
 }

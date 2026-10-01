@@ -6,6 +6,7 @@ mod library;
 mod plan_file;
 mod planner;
 mod render;
+mod subtitles;
 mod whisper;
 
 use clap::Parser;
@@ -25,6 +26,11 @@ fn main() {
 fn run_plan(args: PlanArgs) {
     if let Err(e) = std::fs::File::open(&args.audio) {
         eprintln!("error: cannot open audio file {:?}: {e}", args.audio);
+        std::process::exit(1);
+    }
+
+    if args.min_beat_duration <= 0.0 {
+        eprintln!("error: --min-beat-duration must be greater than 0");
         std::process::exit(1);
     }
 
@@ -75,6 +81,20 @@ fn run_plan(args: PlanArgs) {
         }
     };
 
+    if transcript.duration <= 0.0 {
+        eprintln!(
+            "warning: transcript has no known duration (stale cache?); beat timing won't be \
+             rescaled to match the audio length"
+        );
+    }
+
+    if let Err(e) = library::ensure_assets_dir(&args.assets) {
+        eprintln!(
+            "warning: could not create assets directory {:?}: {e}",
+            args.assets
+        );
+    }
+
     let existing_categories = match library::discover_categories(&args.assets) {
         Ok(categories) => categories,
         Err(e) => {
@@ -88,6 +108,7 @@ fn run_plan(args: PlanArgs) {
         &config.openai_api_key,
         &transcript,
         &existing_categories,
+        args.min_beat_duration,
     ) {
         Ok(plan) => plan,
         Err(e) => {
@@ -96,10 +117,98 @@ fn run_plan(args: PlanArgs) {
         }
     };
 
+    let plan_categories: Vec<&str> = plan.beats.iter().map(|b| b.category.as_str()).collect();
+    let created_categories = match library::ensure_category_dirs(&args.assets, plan_categories) {
+        Ok(created) => created,
+        Err(e) => {
+            eprintln!(
+                "warning: could not create category directories under {:?}: {e}",
+                args.assets
+            );
+            Vec::new()
+        }
+    };
+
+    let enable_subtitles = args.subtitles
+        || args.subtitle_font.is_some()
+        || args.subtitle_font_size.is_some()
+        || args.subtitle_primary_color.is_some()
+        || args.subtitle_bold
+        || args.subtitle_italic
+        || args.subtitle_uppercase
+        || args.subtitle_position.is_some()
+        || args.subtitle_margin_vertical.is_some()
+        || args.subtitle_max_chars_per_line.is_some()
+        || args.subtitle_max_lines.is_some()
+        || args.subtitle_max_duration.is_some();
+
+    let subtitles = if enable_subtitles {
+        let mut style = subtitles::SubtitleStyle::default();
+        if let Some(font) = args.subtitle_font {
+            style.font = font;
+        }
+        if let Some(size) = args.subtitle_font_size {
+            style.font_size = size;
+        }
+        if let Some(color) = args.subtitle_primary_color {
+            style.primary_color = color;
+        }
+        if args.subtitle_bold {
+            style.bold = true;
+        }
+        if args.subtitle_italic {
+            style.italic = true;
+        }
+        if args.subtitle_uppercase {
+            style.uppercase = true;
+        }
+        if let Some(pos) = args.subtitle_position {
+            style.position = pos;
+        }
+        if let Some(margin) = args.subtitle_margin_vertical {
+            style.margin_vertical = margin;
+        }
+        if let Some(chars) = args.subtitle_max_chars_per_line {
+            style.max_chars_per_line = chars;
+        }
+        if let Some(lines) = args.subtitle_max_lines {
+            style.max_lines = lines;
+        }
+        if let Some(dur) = args.subtitle_max_duration {
+            style.max_duration = Some(dur);
+        }
+        let cues = subtitles::segments_to_cues(
+            &transcript.segments,
+            style.max_chars_per_line,
+            style.max_lines,
+            style.max_duration,
+        );
+        if cues.is_empty() {
+            eprintln!(
+                "warning: --subtitles given but the transcript has no usable segments; \
+                 no subtitle block written"
+            );
+            None
+        } else {
+            println!(
+                "subtitles: {} cues generated (edit plan.json to restyle or set \
+                 \"enabled\": false)",
+                cues.len()
+            );
+            Some(subtitles::Subtitles {
+                enabled: true,
+                style,
+                cues,
+            })
+        }
+    } else {
+        None
+    };
+
     let plan_file = PlanFile {
         audio_path: args.audio.clone(),
-        aspect: args.aspect,
         beats: plan.beats,
+        subtitles,
     };
 
     let plan_path = std::path::Path::new("plan.json");
@@ -108,10 +217,15 @@ fn run_plan(args: PlanArgs) {
         std::process::exit(1);
     }
 
-    print_report(&plan_file, plan_path, &args.assets);
+    print_report(&plan_file, plan_path, &args.assets, &created_categories);
 }
 
-fn print_report(plan_file: &PlanFile, plan_path: &std::path::Path, assets_dir: &std::path::Path) {
+fn print_report(
+    plan_file: &PlanFile,
+    plan_path: &std::path::Path,
+    assets_dir: &std::path::Path,
+    created_categories: &[String],
+) {
     use std::collections::BTreeMap;
 
     let mut budgets: BTreeMap<String, (usize, f64)> = BTreeMap::new();
@@ -120,7 +234,7 @@ fn print_report(plan_file: &PlanFile, plan_path: &std::path::Path, assets_dir: &
             .entry(assets::normalize_category(&beat.category))
             .or_insert((0, 0.0));
         entry.0 += 1;
-        entry.1 += beat.end - beat.start;
+        entry.1 += beat.duration;
     }
 
     println!("plan: wrote {:?}", plan_path);
@@ -131,18 +245,9 @@ fn print_report(plan_file: &PlanFile, plan_path: &std::path::Path, assets_dir: &
         println!("  {category}: {count} {beat_word}, {seconds:.1}s");
     }
 
-    let new_categories: Vec<String> = plan_file
-        .beats
-        .iter()
-        .filter(|b| b.is_new_category)
-        .map(|b| assets::normalize_category(&b.category))
-        .collect::<std::collections::BTreeSet<_>>()
-        .into_iter()
-        .collect();
-
-    if !new_categories.is_empty() {
-        println!("categories to create before rendering:");
-        for category in new_categories {
+    if !created_categories.is_empty() {
+        println!("created category directories (add assets before rendering):");
+        for category in created_categories {
             println!("  {category}");
         }
     }
@@ -178,15 +283,7 @@ fn run_render(args: RenderArgs) {
         std::process::exit(1);
     }
 
-    if let Some(aspect) = args.aspect {
-        if aspect != plan_file.aspect {
-            eprintln!(
-                "warning: --aspect {:?} differs from the plan's aspect {:?}; using the plan's aspect",
-                aspect, plan_file.aspect
-            );
-        }
-    }
-    let resolution = render::resolution_for(plan_file.aspect);
+    let resolution = render::resolution_for(args.aspect);
     let total = plan_file.beats.len();
     if plan_file.beats.is_empty() {
         eprintln!("error: plan has no beats to render");
@@ -196,7 +293,7 @@ fn run_render(args: RenderArgs) {
 
     for (i, beat) in plan_file.beats.iter().enumerate() {
         let beat_num = i + 1;
-        let duration = beat.end - beat.start;
+        let duration = beat.duration;
         if duration <= 0.0 {
             eprintln!("error: beat {beat_num} has a non-positive duration ({duration:.3}s)");
             std::process::exit(1);
@@ -264,11 +361,56 @@ fn run_render(args: RenderArgs) {
         std::process::exit(1);
     }
 
-    println!("overlaying narration audio...");
-    let mux_args = render::mux_audio_command(&concat_path, &plan_file.audio_path, &args.out);
-    if let Err(e) = render::run_ffmpeg(&mux_args) {
-        eprintln!("error: {e}");
-        std::process::exit(1);
+    let burn = plan_file
+        .subtitles
+        .as_ref()
+        .filter(|s| s.enabled && !s.cues.is_empty());
+
+    match burn {
+        Some(subs) => {
+            let ass = match subtitles::cues_to_ass(&subs.cues, &subs.style, resolution) {
+                Ok(a) => a,
+                Err(e) => {
+                    eprintln!("error: invalid subtitle style: {e}");
+                    std::process::exit(1);
+                }
+            };
+            let ass_path = tmp_dir.join("subs.ass");
+            if let Err(e) = std::fs::write(&ass_path, ass) {
+                eprintln!("error: cannot write subtitle file {ass_path:?}: {e}");
+                std::process::exit(1);
+            }
+            println!("burning subtitles and overlaying narration audio...");
+            let burn_args = render::subtitle_burn_command(
+                &concat_path,
+                &ass_path,
+                &plan_file.audio_path,
+                &args.out,
+            );
+            if let Err(e) = render::run_ffmpeg(&burn_args) {
+                eprintln!("error: {e}");
+                std::process::exit(1);
+            }
+        }
+        None => {
+            if plan_file
+                .subtitles
+                .as_ref()
+                .is_some_and(|s| s.enabled && s.cues.is_empty())
+            {
+                eprintln!(
+                    "warning: subtitles enabled in the plan but it has no cues; \
+                     rendering without them"
+                );
+            }
+            println!("overlaying narration audio...");
+            let mux_args =
+                render::mux_audio_command(&concat_path, &plan_file.audio_path, &args.out);
+            if let Err(e) = render::run_ffmpeg(&mux_args) {
+                eprintln!("error: {e}");
+                std::process::exit(1);
+            }
+        }
     }
 
     if let Err(e) = std::fs::remove_dir_all(tmp_dir) {

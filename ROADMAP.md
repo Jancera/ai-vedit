@@ -10,7 +10,7 @@ The canonical, up-to-date backlog lives in
 [GitHub Issues](../../issues) (look for `good first issue` and `help wanted`
 labels). This file tracks the higher-level milestones those issues fall under.
 
-## Status: ✅ MVP complete — M0, M1, M2, M3, M4, M5 complete
+## Status: ✅ MVP complete — M0, M1, M2, M3, M4, M5 complete; burned-in subtitles added
 
 ## Milestones
 
@@ -49,6 +49,19 @@ labels). This file tracks the higher-level milestones those issues fall under.
   failing command shown)
 - [x] End-to-end integration test (sample audio + sample assets → rendered output)
 - [x] Usage docs / examples in README
+
+### Distribution ✅ done
+- [x] Tagged `vX.Y.Z` releases publish a statically linked
+  `x86_64-unknown-linux-musl` binary via GitHub Actions
+  ([`release.yml`](.github/workflows/release.yml)); install instructions in
+  [README](README.md#install). macOS/Windows builds are not planned yet.
+
+### Subtitles ✅ done
+- [x] `plan --subtitles` generates caption cues from the transcript and
+  embeds them, with a style block, in `plan.json`
+- [x] `render` burns them in with libass when `subtitles.enabled`
+- [ ] Deferred: word-level/karaoke timing, soft (selectable) tracks,
+  `.ttf` font paths, configurable outline/box
 
 ## Ideas beyond the MVP (not committed yet)
 

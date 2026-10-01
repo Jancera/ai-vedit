@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 pub struct Transcript {
     pub text: String,
     pub segments: Vec<Segment>,
+    #[serde(default)]
+    pub duration: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -242,5 +244,28 @@ mod tests {
             }
             other => panic!("expected Api error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn transcribe_parses_duration_field() {
+        let mut server = mockito::Server::new();
+        let _mock = server
+            .mock("POST", "/v1/audio/transcriptions")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{"text":"hello world","segments":[{"start":0.0,"end":1.5,"text":"hello world"}],"duration":8.47}"#,
+            )
+            .create();
+
+        let audio_path = std::env::temp_dir().join("ai-vedit-test-audio-duration.mp3");
+        std::fs::write(&audio_path, b"fake audio bytes").unwrap();
+
+        let result = transcribe(&server.url(), "test-key", &audio_path);
+
+        std::fs::remove_file(&audio_path).ok();
+
+        let transcript = result.expect("expected successful transcription");
+        assert_eq!(transcript.duration, 8.47);
     }
 }

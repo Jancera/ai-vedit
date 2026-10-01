@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 
+use crate::subtitles::SubtitlePosition;
+
 #[derive(Parser, Debug)]
 #[command(
     name = "ai-vedit",
@@ -32,9 +34,57 @@ pub struct PlanArgs {
     #[arg(long, default_value = "assets")]
     pub assets: PathBuf,
 
-    /// Output aspect ratio
-    #[arg(long, value_enum, default_value = "16:9")]
-    pub aspect: AspectRatio,
+    /// Minimum duration (seconds) each beat should have; shorter beats are merged with neighbors
+    #[arg(long, default_value = "5.0")]
+    pub min_beat_duration: f64,
+
+    /// Generate burned-in subtitles from the transcript and embed them in plan.json
+    #[arg(long)]
+    pub subtitles: bool,
+
+    /// Font to use for subtitles
+    #[arg(long)]
+    pub subtitle_font: Option<String>,
+
+    /// Font size for subtitles
+    #[arg(long)]
+    pub subtitle_font_size: Option<u32>,
+
+    /// Primary color for subtitles (hex #RRGGBB)
+    #[arg(long)]
+    pub subtitle_primary_color: Option<String>,
+
+    /// Make subtitles bold
+    #[arg(long)]
+    pub subtitle_bold: bool,
+
+    /// Make subtitles italic
+    #[arg(long)]
+    pub subtitle_italic: bool,
+
+    /// Make subtitles uppercase
+    #[arg(long)]
+    pub subtitle_uppercase: bool,
+
+    /// Position of subtitles on screen
+    #[arg(long)]
+    pub subtitle_position: Option<SubtitlePosition>,
+
+    /// Vertical margin for subtitles
+    #[arg(long)]
+    pub subtitle_margin_vertical: Option<u32>,
+
+    /// Maximum characters per line for subtitles
+    #[arg(long)]
+    pub subtitle_max_chars_per_line: Option<u32>,
+
+    /// Maximum lines per cue for subtitles
+    #[arg(long)]
+    pub subtitle_max_lines: Option<u32>,
+
+    /// Maximum duration (seconds) per cue for subtitles
+    #[arg(long)]
+    pub subtitle_max_duration: Option<f64>,
 }
 
 #[derive(Args, Debug)]
@@ -51,9 +101,9 @@ pub struct RenderArgs {
     #[arg(long, default_value = "output.mp4")]
     pub out: PathBuf,
 
-    /// Override output aspect ratio from the plan
-    #[arg(long, value_enum)]
-    pub aspect: Option<AspectRatio>,
+    /// Output aspect ratio
+    #[arg(long, value_enum, default_value = "16:9")]
+    pub aspect: AspectRatio,
 
     /// How to fit assets into the video
     #[arg(long, value_enum, default_value = "contain")]
