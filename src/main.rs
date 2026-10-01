@@ -178,11 +178,13 @@ fn run_render(args: RenderArgs) {
         std::process::exit(1);
     }
 
-    if args.aspect != plan_file.aspect {
-        eprintln!(
-            "warning: --aspect {:?} differs from the plan's aspect {:?}; using the plan's aspect",
-            args.aspect, plan_file.aspect
-        );
+    if let Some(aspect) = args.aspect {
+        if aspect != plan_file.aspect {
+            eprintln!(
+                "warning: --aspect {:?} differs from the plan's aspect {:?}; using the plan's aspect",
+                aspect, plan_file.aspect
+            );
+        }
     }
     let resolution = render::resolution_for(plan_file.aspect);
     let total = plan_file.beats.len();
@@ -223,12 +225,20 @@ fn run_render(args: RenderArgs) {
         let clip_path = tmp_dir.join(&clip_filename);
 
         let ffmpeg_args = match selection.asset.kind {
-            assets::AssetKind::Image => {
-                render::ken_burns_command(&selection.asset.path, duration, resolution, &clip_path)
-            }
-            assets::AssetKind::Video => {
-                render::video_clip_command(&selection.asset.path, duration, resolution, &clip_path)
-            }
+            assets::AssetKind::Image => render::ken_burns_command(
+                &selection.asset.path,
+                duration,
+                resolution,
+                args.fit,
+                &clip_path,
+            ),
+            assets::AssetKind::Video => render::video_clip_command(
+                &selection.asset.path,
+                duration,
+                resolution,
+                args.fit,
+                &clip_path,
+            ),
         };
 
         if let Err(e) = render::run_ffmpeg(&ffmpeg_args) {

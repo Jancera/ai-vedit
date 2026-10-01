@@ -2,7 +2,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::cli::AspectRatio;
+use crate::cli::{AspectRatio, FitMode};
 
 pub const FPS: u32 = 60;
 
@@ -17,13 +17,30 @@ pub fn ken_burns_command(
     image_path: &Path,
     duration: f64,
     resolution: (u32, u32),
+    fit: FitMode,
     output_path: &Path,
 ) -> Vec<String> {
     let (width, height) = resolution;
     let frames = (duration * FPS as f64).round() as u64;
+
+    let mut vf = String::new();
+    match fit {
+        FitMode::Contain => {
+            vf.push_str(&format!(
+                "scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,"
+            ));
+        }
+        FitMode::Cover => {
+            vf.push_str(&format!(
+                "scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},"
+            ));
+        }
+    }
+
     let zoompan = format!(
         "zoompan=z='min(zoom+0.0015,1.15)':d={frames}:s={width}x{height}:fps={FPS}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
     );
+    vf.push_str(&zoompan);
 
     vec![
         "-hide_banner".to_string(),
@@ -35,7 +52,7 @@ pub fn ken_burns_command(
         "-t".to_string(),
         format!("{duration:.3}"),
         "-vf".to_string(),
-        zoompan,
+        vf,
         "-r".to_string(),
         FPS.to_string(),
         "-pix_fmt".to_string(),
@@ -48,12 +65,18 @@ pub fn video_clip_command(
     video_path: &Path,
     duration: f64,
     resolution: (u32, u32),
+    fit: FitMode,
     output_path: &Path,
 ) -> Vec<String> {
     let (width, height) = resolution;
-    let scale_pad = format!(
-        "scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2"
-    );
+    let vf = match fit {
+        FitMode::Contain => format!(
+            "scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2"
+        ),
+        FitMode::Cover => format!(
+            "scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}"
+        ),
+    };
 
     vec![
         "-hide_banner".to_string(),
@@ -65,7 +88,7 @@ pub fn video_clip_command(
         "-t".to_string(),
         format!("{duration:.3}"),
         "-vf".to_string(),
-        scale_pad,
+        vf,
         "-an".to_string(),
         "-r".to_string(),
         FPS.to_string(),
@@ -178,11 +201,12 @@ mod tests {
     }
 
     #[test]
-    fn ken_burns_command_builds_expected_args() {
+    fn ken_burns_command_builds_expected_args_for_contain() {
         let args = ken_burns_command(
             Path::new("photo.jpg"),
             2.0,
             (1920, 1080),
+            FitMode::Contain,
             Path::new("out.mp4"),
         );
 
@@ -198,7 +222,7 @@ mod tests {
                 "-t".to_string(),
                 "2.000".to_string(),
                 "-vf".to_string(),
-                "zoompan=z='min(zoom+0.0015,1.15)':d=120:s=1920x1080:fps=60:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+                "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,zoompan=z='min(zoom+0.0015,1.15)':d=120:s=1920x1080:fps=60:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
                     .to_string(),
                 "-r".to_string(),
                 "60".to_string(),
@@ -210,11 +234,45 @@ mod tests {
     }
 
     #[test]
-    fn video_clip_command_builds_expected_args() {
+    fn ken_burns_command_builds_expected_args_for_cover() {
+        let args = ken_burns_command(
+            Path::new("photo.jpg"),
+            2.0,
+            (1920, 1080),
+            FitMode::Cover,
+            Path::new("out.mp4"),
+        );
+
+        assert_eq!(
+            args,
+            vec![
+                "-hide_banner".to_string(),
+                "-y".to_string(),
+                "-loop".to_string(),
+                "1".to_string(),
+                "-i".to_string(),
+                "photo.jpg".to_string(),
+                "-t".to_string(),
+                "2.000".to_string(),
+                "-vf".to_string(),
+                "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,zoompan=z='min(zoom+0.0015,1.15)':d=120:s=1920x1080:fps=60:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+                    .to_string(),
+                "-r".to_string(),
+                "60".to_string(),
+                "-pix_fmt".to_string(),
+                "yuv420p".to_string(),
+                "out.mp4".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn video_clip_command_builds_expected_args_for_contain() {
         let args = video_clip_command(
             Path::new("clip.mp4"),
             3.5,
             (1080, 1920),
+            FitMode::Contain,
             Path::new("out.mp4"),
         );
 
@@ -231,6 +289,40 @@ mod tests {
                 "3.500".to_string(),
                 "-vf".to_string(),
                 "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2"
+                    .to_string(),
+                "-an".to_string(),
+                "-r".to_string(),
+                "60".to_string(),
+                "-pix_fmt".to_string(),
+                "yuv420p".to_string(),
+                "out.mp4".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn video_clip_command_builds_expected_args_for_cover() {
+        let args = video_clip_command(
+            Path::new("clip.mp4"),
+            3.5,
+            (1080, 1920),
+            FitMode::Cover,
+            Path::new("out.mp4"),
+        );
+
+        assert_eq!(
+            args,
+            vec![
+                "-hide_banner".to_string(),
+                "-y".to_string(),
+                "-stream_loop".to_string(),
+                "-1".to_string(),
+                "-i".to_string(),
+                "clip.mp4".to_string(),
+                "-t".to_string(),
+                "3.500".to_string(),
+                "-vf".to_string(),
+                "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
                     .to_string(),
                 "-an".to_string(),
                 "-r".to_string(),

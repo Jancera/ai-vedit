@@ -51,9 +51,13 @@ pub struct RenderArgs {
     #[arg(long, default_value = "output.mp4")]
     pub out: PathBuf,
 
-    /// Output aspect ratio
-    #[arg(long, value_enum, default_value = "16:9")]
-    pub aspect: AspectRatio,
+    /// Override output aspect ratio from the plan
+    #[arg(long, value_enum)]
+    pub aspect: Option<AspectRatio>,
+
+    /// How to fit assets into the video
+    #[arg(long, value_enum, default_value = "contain")]
+    pub fit: FitMode,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Serialize, Deserialize)]
@@ -62,4 +66,10 @@ pub enum AspectRatio {
     Sixteen9,
     #[value(name = "9:16")]
     Nine16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum FitMode {
+    Contain,
+    Cover,
 }
