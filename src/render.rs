@@ -105,8 +105,6 @@ pub fn video_clip_command(
     ]
 }
 
-
-
 pub fn concat_list_content(clip_paths: &[PathBuf]) -> String {
     clip_paths
         .iter()
@@ -387,8 +385,7 @@ mod tests {
                 "-t".to_string(),
                 "3.500".to_string(),
                 "-vf".to_string(),
-                "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
-                    .to_string(),
+                "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920".to_string(),
                 "-an".to_string(),
                 "-r".to_string(),
                 "60".to_string(),
