@@ -5,6 +5,11 @@ on:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.1.0)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -24,17 +29,20 @@ jobs:
       - name: Install musl toolchain
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-      - name: Verify tag matches Cargo.toml version (if triggered by tag)
+      - name: Verify tag matches Cargo.toml version
         run: |
           cargo_version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            tag_version="${GITHUB_REF_NAME#v}"
-            if [ "$tag_version" != "$cargo_version" ]; then
-              echo "::error::tag $GITHUB_REF_NAME does not match Cargo.toml version $cargo_version"
-              exit 1
-            fi
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag_name="${{ inputs.tag }}"
+          else
+            tag_name="${GITHUB_REF_NAME}"
+          fi
+          if [ "${tag_name#v}" != "$cargo_version" ]; then
+            echo "::error::tag $tag_name does not match Cargo.toml version $cargo_version"
+            exit 1
           fi
           echo "version=$cargo_version" >> "$GITHUB_ENV"
+          echo "tag_name=$tag_name" >> "$GITHUB_ENV"
 
       - name: Build
         run: cargo build --release --locked --target "$TARGET"
@@ -55,6 +63,7 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.tag_name }}
           files: |
             ai-vedit-${{ env.version }}-x86_64-unknown-linux-musl.tar.gz
             ai-vedit-${{ env.version }}-x86_64-unknown-linux-musl.tar.gz.sha256
